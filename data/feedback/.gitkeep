@@ -1,0 +1,3 @@
+# Feedback rows submitted via the /feedback endpoint or web UI are appended
+# to feedback.csv in this directory. The directory is tracked but the CSV
+# itself is gitignored — each environment accumulates its own feedback.

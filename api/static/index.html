@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Heart Disease Risk — Predict & Improve</title>
+  <link rel="stylesheet" href="/ui/static/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Heart Disease Risk Classifier</h1>
+    <p class="subtitle">UCI Cleveland · scikit-learn · MLflow · FastAPI</p>
+    <div id="model-info" class="model-info">Loading model info…</div>
+  </header>
+
+  <main class="layout">
+    <section class="card">
+      <h2>Patient features</h2>
+      <form id="predict-form" autocomplete="off">
+        <div class="grid">
+          <label>Age (years)
+            <input type="number" name="age" min="1" max="120" step="1" value="63" required>
+          </label>
+          <label>Sex
+            <select name="sex" required>
+              <option value="1">Male (1)</option>
+              <option value="0">Female (0)</option>
+            </select>
+          </label>
+          <label>Chest pain type (cp)
+            <select name="cp" required>
+              <option value="1">1 — Typical angina</option>
+              <option value="2">2 — Atypical angina</option>
+              <option value="3">3 — Non-anginal pain</option>
+              <option value="4" selected>4 — Asymptomatic</option>
+            </select>
+          </label>
+          <label>Resting BP (trestbps, mm Hg)
+            <input type="number" name="trestbps" min="50" max="260" step="1" value="145" required>
+          </label>
+          <label>Cholesterol (chol, mg/dl)
+            <input type="number" name="chol" min="50" max="700" step="1" value="233" required>
+          </label>
+          <label>Fasting BS &gt; 120 (fbs)
+            <select name="fbs" required>
+              <option value="0">0 — No</option>
+              <option value="1" selected>1 — Yes</option>
+            </select>
+          </label>
+          <label>Resting ECG (restecg)
+            <select name="restecg" required>
+              <option value="0">0 — Normal</option>
+              <option value="1">1 — ST-T abnormality</option>
+              <option value="2" selected>2 — LV hypertrophy</option>
+            </select>
+          </label>
+          <label>Max heart rate (thalach)
+            <input type="number" name="thalach" min="40" max="260" step="1" value="150" required>
+          </label>
+          <label>Exercise angina (exang)
+            <select name="exang" required>
+              <option value="0" selected>0 — No</option>
+              <option value="1">1 — Yes</option>
+            </select>
+          </label>
+          <label>Oldpeak (ST depression)
+            <input type="number" name="oldpeak" min="-2" max="10" step="0.1" value="2.3" required>
+          </label>
+          <label>Slope of ST segment
+            <select name="slope" required>
+              <option value="1">1 — Upsloping</option>
+              <option value="2">2 — Flat</option>
+              <option value="3" selected>3 — Downsloping</option>
+            </select>
+          </label>
+          <label>Major vessels (ca)
+            <select name="ca" required>
+              <option value="0" selected>0</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+            </select>
+          </label>
+          <label>Thalassemia (thal)
+            <select name="thal" required>
+              <option value="3">3 — Normal</option>
+              <option value="6" selected>6 — Fixed defect</option>
+              <option value="7">7 — Reversible defect</option>
+            </select>
+          </label>
+        </div>
+        <div class="actions">
+          <button type="submit" id="predict-btn">Predict</button>
+          <button type="button" id="example-btn" class="secondary">Load example</button>
+          <button type="reset" class="secondary">Reset</button>
+        </div>
+      </form>
+    </section>
+
+    <aside class="card result-card" id="result-card" hidden>
+      <h2>Prediction</h2>
+      <div id="prediction-summary"></div>
+      <div class="probability-bar"><div id="probability-fill"></div></div>
+      <p class="muted">Model probability: <span id="probability-text">—</span></p>
+
+      <h3>Was this prediction correct?</h3>
+      <p class="muted small">
+        Your feedback is saved to <code>data/feedback/feedback.csv</code> and
+        included in the next retraining run to improve the model.
+      </p>
+      <div class="actions">
+        <button type="button" id="feedback-correct" class="success">Yes, correct ✓</button>
+        <button type="button" id="feedback-wrong" class="danger">No — actual was the other class ✗</button>
+      </div>
+      <div id="feedback-status" class="status"></div>
+
+      <h3>Retraining</h3>
+      <p class="muted small">
+        Triggers a full training run on the original dataset
+        <em>plus</em> all collected feedback. Runs in the background
+        (about 30–60 seconds). The new model is automatically reloaded.
+      </p>
+      <button type="button" id="retrain-btn" class="primary">Retrain model now</button>
+      <div id="retrain-status" class="status"></div>
+    </aside>
+  </main>
+
+  <footer>
+    <a href="/docs" target="_blank">OpenAPI / Swagger</a>
+    <a href="/metrics" target="_blank">Prometheus /metrics</a>
+    <a href="/health" target="_blank">/health</a>
+  </footer>
+
+  <script src="/ui/static/app.js"></script>
+</body>
+</html>

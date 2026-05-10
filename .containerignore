@@ -1,0 +1,19 @@
+# Build context exclusions for podman / docker builds.
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+notebooks/
+project notes/
+mlruns/
+*.msix
+*.exe
+*.zip
+.git/
+.github/
+tests/
+demo/
+reports/screenshots/

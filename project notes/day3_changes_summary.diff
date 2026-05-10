@@ -1,0 +1,42 @@
+================================================================================
+Day 3 Changes - Baseline Modeling and Evaluation
+Date: May 3, 2026
+================================================================================
+
+SUMMARY:
+- Modified 5 existing files
+- Created 3 new source/config files  
+- Generated 9 artifact files (models, metrics, visualizations)
+
+FILES AFFECTED:
+Modified:
+  1. src/heart_disease_mlops/train.py
+  2. src/heart_disease_mlops/evaluate.py
+  3. pyproject.toml
+  4. Makefile
+  5. plan.md
+
+New:
+  6. src/heart_disease_mlops/compare_models.py
+  7. config.yaml
+  8. demo/day3_summary.txt
+
+Generated Artifacts:
+  9. models/baseline_comparison/logistic_model.joblib
+  10. models/baseline_comparison/logistic_metrics.json
+  11. models/baseline_comparison/logistic_eval.json
+  12. models/baseline_comparison/random_forest_model.joblib
+  13. models/baseline_comparison/random_forest_metrics.json
+  14. models/baseline_comparison/random_forest_eval.json
+  15. models/baseline_comparison/comparison.json
+  16. reports/logistic_confusion_matrix.png
+  17. reports/random_forest_confusion_matrix.png
+
+================================================================================
+DETAILED CHANGES
+================================================================================
+
+See individual files below for complete content.
+Binary files (*.joblib, *.png) are excluded from this diff.
+
+================================================================================
