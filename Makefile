@@ -9,11 +9,17 @@ IMAGE ?= heart-disease-api
 TAG ?= latest
 PORT ?= 8000
 KIND_CLUSTER ?= heart-disease
+# MLflow tracking server URI consumed by the FastAPI app (and the SDK in
+# general). Override on the command line, e.g.
+#   make api MLFLOW_SERVER_URI=http://mlflow.example.com:5000
+MLFLOW_SERVER_URI ?= http://localhost:5000
+COMPOSE ?= $(shell command -v podman-compose >/dev/null 2>&1 && echo podman-compose || echo docker compose)
 
 .DEFAULT_GOAL := help
 
 .PHONY: help install install-dev lint format test test-fast train train-fast \
         clean api ui notebook prefect drift docker-build docker-run docker-stop \
+        compose-up compose-down compose-logs \
         kind-up kind-load kind-deploy kind-down k8s-apply k8s-delete \
         report-pdf all ci
 
@@ -59,11 +65,17 @@ notebook: ## Launch JupyterLab in the notebooks folder
 	jupyter lab --notebook-dir=notebooks
 
 ## ---------- Serving ----------
-api: ## Run the FastAPI app with uvicorn (auto-reload)
-	uvicorn api.app:app --host 0.0.0.0 --port $(PORT) --reload
+api: ## Run the FastAPI app with uvicorn (auto-reload). Honours MLFLOW_SERVER_URI.
+	MLFLOW_SERVER_URI="$(MLFLOW_SERVER_URI)" MLFLOW_TRACKING_URI="$(MLFLOW_SERVER_URI)" \
+		uvicorn api.app:app --host 0.0.0.0 --port $(PORT) --reload
 
 ui: ## Open the prediction UI in the default browser (api must be running)
 	@$(PYTHON) -c "import webbrowser; webbrowser.open('http://localhost:$(PORT)/ui')"
+
+mlflow-ui: ## Run a standalone MLflow tracking server on port 5000 (file backend)
+	mlflow server --backend-store-uri "$$PWD/mlruns" \
+		--default-artifact-root "$$PWD/mlruns" \
+		--host 0.0.0.0 --port 5000
 
 ## ---------- Container (podman or docker) ----------
 RUNTIME ?= $(shell command -v podman >/dev/null 2>&1 && echo podman || echo docker)
@@ -79,6 +91,18 @@ docker-run: ## Run the container, mapping $(PORT)
 
 docker-stop: ## Stop the running container
 	-$(RUNTIME) rm -f heart-disease-api
+
+## ---------- Compose (api + mlflow tracking server) ----------
+compose-up: ## Start MLflow (port 5000) and the API (port $(PORT)) via compose
+	$(COMPOSE) -f compose.yaml up -d --build
+	@echo "MLflow UI:    http://localhost:5000"
+	@echo "API/UI:       http://localhost:$(PORT)/ui"
+
+compose-down: ## Stop the compose stack
+	$(COMPOSE) -f compose.yaml down
+
+compose-logs: ## Follow logs from both services
+	$(COMPOSE) -f compose.yaml logs -f --tail=100
 
 ## ---------- Kubernetes (kind) ----------
 kind-up: ## Create a local kind cluster

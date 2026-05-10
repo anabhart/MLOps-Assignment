@@ -1,0 +1,70 @@
+# Compose stack: MLflow tracking server + Heart Disease API.
+#
+# Bring up:    make compose-up        (or `docker compose up -d --build` /
+#                                       `podman-compose up -d --build`)
+# Tear down:   make compose-down
+#
+# Endpoints after `up`:
+#   - MLflow UI:        http://localhost:5000
+#   - Prediction UI:    http://localhost:8000/ui
+#   - Swagger:          http://localhost:8000/docs
+#   - Prometheus:       http://localhost:8000/metrics
+#
+# Traces emitted from the API land in MLflow under the
+# `heart-disease-serving` experiment because the `api` service is
+# configured with MLFLOW_SERVER_URI=http://mlflow:5000.
+
+name: heart-disease
+
+services:
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v3.0.0
+    container_name: heart-disease-mlflow
+    command: >-
+      mlflow server
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --default-artifact-root /mlflow/artifacts
+      --host 0.0.0.0
+      --port 5000
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow-data:/mlflow
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5000/health').status==200 else 1)\""
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Containerfile
+    image: heart-disease-api:latest
+    container_name: heart-disease-api
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    environment:
+      MLFLOW_SERVER_URI: http://mlflow:5000
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      HEART_DISEASE_MODEL_PATH: /app/artifacts/models/best_model.joblib
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data/feedback:/app/data/feedback
+      - ./artifacts:/app/artifacts
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  mlflow-data:

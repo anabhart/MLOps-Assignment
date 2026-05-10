@@ -1,8 +1,13 @@
 """MLflow tracing setup for the FastAPI service.
 
 Traces produced via ``@mlflow.trace`` (and any sklearn autologged spans)
-are sent to the same file-backend ``mlruns/`` store under a dedicated
+are sent to the configured MLflow tracking server under a dedicated
 serving experiment so they are easy to filter from training runs.
+
+Tracking URI resolution (in priority order):
+  1. ``MLFLOW_SERVER_URI`` (project-specific; what the Makefile uses)
+  2. ``MLFLOW_TRACKING_URI`` (standard MLflow env var)
+  3. local ``mlruns/`` file-backend (default for `python -m heart_disease_mlops`)
 
 Disable with the env var ``HEART_DISEASE_DISABLE_TRACING=1``.
 """
@@ -25,6 +30,17 @@ SERVING_EXPERIMENT = os.environ.get(
 _initialised = False
 
 
+def _resolve_tracking_uri() -> str:
+    """Pick the MLflow tracking URI based on env vars, with file-store fallback."""
+    for var in ("MLFLOW_SERVER_URI", "MLFLOW_TRACKING_URI"):
+        val = os.environ.get(var)
+        if val:
+            return val
+    ensure_dirs()
+    MLRUNS_DIR.mkdir(parents=True, exist_ok=True)
+    return MLRUNS_DIR.resolve().as_uri()
+
+
 def setup_tracing() -> bool:
     """Configure MLflow tracking + a serving experiment for traces.
 
@@ -39,14 +55,13 @@ def setup_tracing() -> bool:
         return False
 
     try:
-        ensure_dirs()
-        MLRUNS_DIR.mkdir(parents=True, exist_ok=True)
-        mlflow.set_tracking_uri(MLRUNS_DIR.resolve().as_uri())
+        uri = _resolve_tracking_uri()
+        mlflow.set_tracking_uri(uri)
         mlflow.set_experiment(SERVING_EXPERIMENT)
         _initialised = True
         logger.info(
             "MLflow tracing initialised (uri=%s experiment=%s)",
-            MLRUNS_DIR.resolve().as_uri(),
+            uri,
             SERVING_EXPERIMENT,
         )
         return True
