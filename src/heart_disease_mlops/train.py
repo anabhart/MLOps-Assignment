@@ -143,10 +143,19 @@ def tune_model(
     return grid
 
 
+def _resolve_tracking_uri() -> str:
+    """Pick the MLflow tracking URI: env vars > local file store fallback."""
+    for var in ("MLFLOW_SERVER_URI", "MLFLOW_TRACKING_URI"):
+        val = os.environ.get(var)
+        if val:
+            return val
+    MLRUNS_DIR.mkdir(parents=True, exist_ok=True)
+    return MLRUNS_DIR.resolve().as_uri()
+
+
 def _setup_mlflow(experiment_name: str = "heart-disease-cleveland") -> None:
     ensure_dirs()
-    MLRUNS_DIR.mkdir(parents=True, exist_ok=True)
-    mlflow.set_tracking_uri(MLRUNS_DIR.resolve().as_uri())
+    mlflow.set_tracking_uri(_resolve_tracking_uri())
     mlflow.set_experiment(experiment_name)
     # Autolog params/metrics/model and emit fit/predict spans as traces.
     # `disable=False` re-enables in case a previous call set it; we use

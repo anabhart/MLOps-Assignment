@@ -48,26 +48,31 @@ test: ## Run full pytest suite
 test-fast: ## Run quick tests only (skip slow markers)
 	pytest -m "not slow"
 
+# Prefix used by every Python command that should log to MLflow. Setting both
+# MLFLOW_SERVER_URI (project-specific) and MLFLOW_TRACKING_URI (standard) keeps
+# the FastAPI app, the training CLI, Prefect, drift jobs, and any third-party
+# MLflow integrations on the same backend.
+MLFLOW_ENV = MLFLOW_SERVER_URI="$(MLFLOW_SERVER_URI)" MLFLOW_TRACKING_URI="$(MLFLOW_SERVER_URI)"
+
 ## ---------- ML pipeline ----------
-train: ## Full training run (writes artifacts/, mlruns/)
-	$(PYTHON) -m heart_disease_mlops
+train: ## Full training run. Logs to $(MLFLOW_SERVER_URI).
+	$(MLFLOW_ENV) $(PYTHON) -m heart_disease_mlops
 
-train-fast: ## Reduced-grid training run (used by CI)
-	HEART_DISEASE_FAST_TRAIN=1 $(PYTHON) -m heart_disease_mlops
+train-fast: ## Reduced-grid training run (used by CI). Logs to $(MLFLOW_SERVER_URI).
+	$(MLFLOW_ENV) HEART_DISEASE_FAST_TRAIN=1 $(PYTHON) -m heart_disease_mlops
 
-prefect: ## Run the Prefect orchestration flow
-	$(PYTHON) pipelines/prefect_flow.py
+prefect: ## Run the Prefect orchestration flow.
+	$(MLFLOW_ENV) $(PYTHON) pipelines/prefect_flow.py
 
-drift: ## Generate Evidently drift report
-	$(PYTHON) monitoring/drift_detection.py
+drift: ## Generate Evidently drift report.
+	$(MLFLOW_ENV) $(PYTHON) monitoring/drift_detection.py
 
 notebook: ## Launch JupyterLab in the notebooks folder
-	jupyter lab --notebook-dir=notebooks
+	$(MLFLOW_ENV) jupyter lab --notebook-dir=notebooks
 
 ## ---------- Serving ----------
 api: ## Run the FastAPI app with uvicorn (auto-reload). Honours MLFLOW_SERVER_URI.
-	MLFLOW_SERVER_URI="$(MLFLOW_SERVER_URI)" MLFLOW_TRACKING_URI="$(MLFLOW_SERVER_URI)" \
-		uvicorn api.app:app --host 0.0.0.0 --port $(PORT) --reload
+	$(MLFLOW_ENV) uvicorn api.app:app --host 0.0.0.0 --port $(PORT) --reload
 
 ui: ## Open the prediction UI in the default browser (api must be running)
 	@$(PYTHON) -c "import webbrowser; webbrowser.open('http://localhost:$(PORT)/ui')"
