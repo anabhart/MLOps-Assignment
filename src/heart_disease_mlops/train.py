@@ -148,6 +148,16 @@ def _setup_mlflow(experiment_name: str = "heart-disease-cleveland") -> None:
     MLRUNS_DIR.mkdir(parents=True, exist_ok=True)
     mlflow.set_tracking_uri(MLRUNS_DIR.resolve().as_uri())
     mlflow.set_experiment(experiment_name)
+    # Autolog params/metrics/model and emit fit/predict spans as traces.
+    # `disable=False` re-enables in case a previous call set it; we use
+    # `silent=True` to keep training logs clean.
+    mlflow.sklearn.autolog(
+        log_models=False,           # we register models explicitly below
+        log_input_examples=False,
+        log_model_signatures=False,
+        log_post_training_metrics=False,
+        silent=True,
+    )
 
 
 def train_and_log_all(
@@ -166,11 +176,22 @@ def train_and_log_all(
     ensure_dirs()
     _setup_mlflow(experiment_name)
 
-    df = load_training_dataset(include_feedback=include_feedback)
-    from .data import load_feedback
+    with mlflow.start_span(name="load_training_data") as load_span:
+        df = load_training_dataset(include_feedback=include_feedback)
+        from .data import load_feedback
 
-    n_feedback = len(load_feedback()) if include_feedback else 0
-    X_train, X_test, y_train, y_test = train_test_split_df(df)
+        n_feedback = len(load_feedback()) if include_feedback else 0
+        X_train, X_test, y_train, y_test = train_test_split_df(df)
+        load_span.set_inputs({"include_feedback": include_feedback})
+        load_span.set_outputs(
+            {
+                "n_rows": int(len(df)),
+                "n_feedback_rows": int(n_feedback),
+                "n_train": int(len(X_train)),
+                "n_test": int(len(X_test)),
+            }
+        )
+
     specs = specs or default_model_specs()
 
     results: dict[str, dict[str, Any]] = {}
@@ -179,8 +200,21 @@ def train_and_log_all(
     best_estimator: Pipeline | None = None
 
     for spec in specs:
-        with mlflow.start_run(run_name=spec.name) as run:
-            grid = tune_model(spec, X_train, y_train)
+        with (
+            mlflow.start_run(run_name=spec.name) as run,
+            mlflow.start_span(name=f"train_{spec.name}") as model_span,
+        ):
+            model_span.set_inputs(
+                {"model_family": spec.name, "n_train": int(len(X_train))}
+            )
+            with mlflow.start_span(name="grid_search_fit") as fit_span:
+                grid = tune_model(spec, X_train, y_train)
+                fit_span.set_outputs(
+                    {
+                        "cv_best_score": float(grid.best_score_),
+                        "best_params": {k: str(v) for k, v in grid.best_params_.items()},
+                    }
+                )
             best_pipe: Pipeline = grid.best_estimator_
 
             cv_summary = {
@@ -188,7 +222,9 @@ def train_and_log_all(
                 "cv_scoring": "roc_auc",
                 "cv_folds": CV_FOLDS,
             }
-            test_eval = evaluation_report(best_pipe, X_test, y_test)
+            with mlflow.start_span(name="evaluate_test") as eval_span:
+                test_eval = evaluation_report(best_pipe, X_test, y_test)
+                eval_span.set_outputs(test_eval["metrics"])
 
             mlflow.log_params({f"best_{k}": v for k, v in grid.best_params_.items()})
             mlflow.log_param("model_family", spec.name)
@@ -213,6 +249,9 @@ def train_and_log_all(
             }
 
             score = test_eval["metrics"].get("roc_auc", test_eval["metrics"]["f1"])
+            model_span.set_outputs(
+                {"score": float(score), "run_id": run.info.run_id}
+            )
             if score > best_score:
                 best_score = score
                 best_name = spec.name

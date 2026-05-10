@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import joblib
+import mlflow
 import pandas as pd
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -36,6 +37,7 @@ from heart_disease_mlops.config import (
 from heart_disease_mlops.data import append_feedback, load_feedback
 
 from .logging_config import configure_logging
+from .tracing import setup_tracing
 
 logger = logging.getLogger("heart_disease_api")
 
@@ -191,33 +193,43 @@ def _run_retrain(job_id: int) -> None:
     with _State.retrain_lock:
         _State.retrain_busy = True
 
-    try:
-        logger.info("Retrain job %d starting", job_id)
-        summary = train_and_log_all(
-            experiment_name="heart-disease-feedback-retrain",
-            include_feedback=True,
-        )
-        # Hot-reload the model + summary so subsequent /predict uses it.
-        _State.model = _load_model()
-        _State.summary = _load_summary()
-        RETRAIN_RUNS.labels(status="success").inc()
-        logger.info(
-            "Retrain job %d finished: best=%s score=%.4f n_feedback=%s",
-            job_id,
-            summary.get("best_model"),
-            summary.get("best_score", 0.0),
-            summary.get("n_feedback_rows", 0),
-        )
-    except Exception:  # pragma: no cover - logged for ops
-        RETRAIN_RUNS.labels(status="failure").inc()
-        logger.exception("Retrain job %d failed", job_id)
-    finally:
-        _State.retrain_busy = False
+    with mlflow.start_span(name="retrain_job") as span:
+        span.set_inputs({"job_id": job_id})
+        try:
+            logger.info("Retrain job %d starting", job_id)
+            summary = train_and_log_all(
+                experiment_name="heart-disease-feedback-retrain",
+                include_feedback=True,
+            )
+            # Hot-reload the model + summary so subsequent /predict uses it.
+            _State.model = _load_model()
+            _State.summary = _load_summary()
+            RETRAIN_RUNS.labels(status="success").inc()
+            span.set_outputs(
+                {
+                    "best_model": summary.get("best_model"),
+                    "best_score": summary.get("best_score"),
+                    "n_feedback_rows": summary.get("n_feedback_rows"),
+                }
+            )
+            logger.info(
+                "Retrain job %d finished: best=%s score=%.4f n_feedback=%s",
+                job_id,
+                summary.get("best_model"),
+                summary.get("best_score", 0.0),
+                summary.get("n_feedback_rows", 0),
+            )
+        except Exception:  # pragma: no cover - logged for ops
+            RETRAIN_RUNS.labels(status="failure").inc()
+            logger.exception("Retrain job %d failed", job_id)
+        finally:
+            _State.retrain_busy = False
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     configure_logging()
+    setup_tracing()
     _State.model = _load_model()
     _State.summary = _load_summary()
     _refresh_feedback_gauge()
@@ -282,6 +294,7 @@ def model_info() -> ModelInfo:
 
 
 @app.post("/predict", response_model=PredictionResponse, tags=["inference"])
+@mlflow.trace(name="predict", span_type="PREDICTOR")
 def predict(features: PatientFeatures) -> PredictionResponse:
     if _State.model is None:
         REQUESTS.labels(status="unavailable").inc()
@@ -299,7 +312,10 @@ def predict(features: PatientFeatures) -> PredictionResponse:
             [features.model_dump()],
             columns=NUMERIC_FEATURES + CATEGORICAL_FEATURES,
         )
-        proba = float(_State.model.predict_proba(row)[0, 1])
+        with mlflow.start_span(name="model.predict_proba") as span:
+            span.set_inputs({"n_features": row.shape[1]})
+            proba = float(_State.model.predict_proba(row)[0, 1])
+            span.set_outputs({"probability": proba})
         prediction = int(proba >= 0.5)
         label = "disease" if prediction == 1 else "no_disease"
     except Exception as exc:  # pragma: no cover - defensive
@@ -320,6 +336,7 @@ def metrics() -> Response:
 
 
 @app.post("/feedback", response_model=FeedbackResponse, tags=["feedback"])
+@mlflow.trace(name="feedback")
 def feedback(payload: FeedbackPayload) -> FeedbackResponse:
     """Record a labelled feedback example so it is included in the next retrain."""
     try:
@@ -353,6 +370,7 @@ def feedback(payload: FeedbackPayload) -> FeedbackResponse:
 
 
 @app.post("/retrain", response_model=RetrainResponse, tags=["feedback"])
+@mlflow.trace(name="retrain_request")
 def retrain(background: BackgroundTasks) -> RetrainResponse:
     """Kick off a background retraining run that includes feedback rows."""
     if _State.retrain_busy:
