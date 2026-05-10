@@ -13,7 +13,7 @@ WORKDIR /app
 
 # Install system deps needed by scikit-learn / numpy wheels (slim image).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential curl \
+    && apt-get install -y --no-install-recommends git build-essential curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python deps first so they cache between code changes.
