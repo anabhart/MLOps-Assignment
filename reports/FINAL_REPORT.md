@@ -33,25 +33,11 @@ pip install -e ".[dev,api]"
 
 Run the full pipeline:
 
-```powershell
-python -m heart_disease_mlops          # train + log + persist best model
-mlflow ui --backend-store-uri mlruns   # inspect runs
-uvicorn api.app:app --reload           # serve the model on :8000
-```
-
 Or, end-to-end via Prefect:
 
 ```powershell
 python pipelines/prefect_flow.py
 ```
-
-## 3. Data & EDA
-
-| Item | Value |
-|------|-------|
-| Records (raw) | 303 |
-| Records (cleaned) | 297 |
-| Features | 5 numeric + 8 categorical |
 | Target | Binary (`num >= 1` ⇒ disease) |
 | Class balance | ~54% no-disease / 46% disease |
 | Missing values | 6 rows (in `ca`, `thal`) → dropped |
@@ -82,8 +68,6 @@ The preprocessing pipeline is implemented as a `ColumnTransformer` that ensures:
 
 **Location**: `src/heart_disease_mlops/train.py` (lines 40–100)
 
-#### Model 1: Logistic Regression
-```python
 Param grid: C ∈ [0.1, 1.0, 10.0] × penalty ∈ ['l1', 'l2']
 Total combinations: 6
 Best params: C=10.0, penalty='l1'
@@ -105,10 +89,6 @@ CV ROC-AUC: 0.9075 → Test ROC-AUC: 0.9116 ✓ BEST
 
 **Configuration** (`train.py` lines 106–116):
 - **Strategy**: Stratified K-fold (preserves class distribution)
-- **Splits**: 5 folds
-- **Scoring**: ROC-AUC (robust to class imbalance: 46% disease, 54% healthy)
-- **Reproducibility**: `random_state=42`, shuffle=True
-- **Parallelization**: `n_jobs=-1` for multiprocessing
 
 ### 4.4 Model Evaluation Results
 
@@ -133,10 +113,6 @@ Class 1 (Disease):      Precision 81%, Recall 72%, F1 76%
 ```
 
 ### 4.5 Model Selection Criteria
-
-- **Primary metric**: ROC-AUC (robust to class imbalance)
-- **Rationale**: Logistic Regression (86.53%) vs Random Forest (91.16%)
-- **Decision**: Random Forest selected (≈4.6% improvement in ROC-AUC)
 - **Trade-off**: Slight recall improvement for disease class (72.41% vs 68.97%)
 
 ### 4.6 Training Artifacts
