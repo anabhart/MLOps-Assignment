@@ -341,43 +341,28 @@
 
 **Status**: ✅ **COMPLETE**
 
----
 
 ### Requirement 7: Production Deployment (7 marks)
-- [x] **Docker/Podman container** — Multi-stage Containerfile
   - Evidence: `Containerfile` (35 lines) — Python 3.11-slim, uvicorn ENTRYPOINT
-- [x] **Container health check** — Readiness probe defined
   - Evidence: `HEALTHCHECK` in Containerfile + `/health` endpoint
-- [x] **Unit tests** — Data, preprocessing, training, API tests
   - Evidence: `tests/` (5 files, 21 tests pass) — 100% coverage on core modules
-- [x] **Integration tests** — API endpoint smoke tests
   - Evidence: `tests/test_api.py` — /health, /predict, /model-info endpoints tested
-- [x] **CI/CD pipeline** — GitHub Actions workflow
   - Evidence: `.github/workflows/ci.yml` — lint, test, build, smoke test steps
-- [x] **Build reproducibility** — Deterministic layer caching
   - Evidence: Requirements pinned in `pyproject.toml`, `requirements.txt`
 
 **Status**: ✅ **COMPLETE**
 
----
 
 ### Requirement 9: Production Deployment (7 marks)
-- [x] **Kubernetes manifests** — Deployment, Service, Ingress
   - Evidence: `deploy/k8s/deployment.yaml`, `deploy/k8s/service.yaml`, `deploy/k8s/ingress.yaml`
-- [x] **MLflow integration** — In-cluster MLflow server for tracking
   - Evidence: `deploy/k8s/mlflow-deployment.yaml` + `deploy/k8s/mlflow-service.yaml`
-- [x] **Service discovery** — K8s DNS for API ↔ MLflow communication
   - Evidence: `deployment.yaml` env vars: `MLFLOW_SERVER_URI=http://heart-disease-mlflow:5000`
-- [x] **Automated deployment** — Scripts for bring-up/tear-down
   - Evidence: `deploy/k8s/deploy.sh`, `deploy/k8s/bringup.sh`, `deploy/k8s/bringdown.sh`
-- [x] **LoadBalancer + Ingress** — Service exposure options documented
   - Evidence: LoadBalancer service (port 80) + nginx ingress (heart-disease.local)
-- [x] **Deployment verification** — Screenshots of running resources + endpoints
   - Evidence: `reports/screenshots/` (4 images):
     - `k8s-pods-services-ingress-status.png` — kubectl get pods,svc,ingress
     - `api-swagger-docs.png` — /docs endpoint
     - `api-health-success-and-predict-response.png` — API responses
-    - `mlflow-ui-running.png` — MLflow experiments UI
 
 **Status**: ✅ **COMPLETE** (All 7 requirements verified and evidenced)
 

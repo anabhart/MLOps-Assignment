@@ -99,23 +99,7 @@ mlflow models serve -m "models:/heart-disease-classifier/latest"
 conda env create -f mlruns/<exp>/<run>/artifacts/model/conda.yaml
 ```
 
-Key pinned packages: `scikit-learn==1.8.0`, `numpy==2.4.4`, `pandas==2.3.3`,
-`joblib==1.5.3`, `cloudpickle==3.1.2`.
-
-## CI/CD Pipeline & Automated Testing (Requirement 5)
-
-### GitHub Actions workflow (`.github/workflows/ci.yml`)
-
-Triggers on every push to `main`/`master` and all pull requests.
-Four sequential jobs — each requires the previous to pass:
-
-```
-Lint (ruff) → Unit tests → Training smoke run → Container build & smoke
-```
-
 | Job | What it does |
-|-----|-------------|
-| **Lint** | `ruff check src tests api` — enforces style, imports, bugbear rules |
 | **Unit tests** | `pytest --cov=heart_disease_mlops` with `HEART_DISEASE_FAST_TRAIN=1` |
 | **Training smoke** | Full `python -m heart_disease_mlops` in fast mode; uploads `training-artifacts` |
 | **Container build** | `docker build -f Containerfile` then live `/health` + `/predict` smoke test |
