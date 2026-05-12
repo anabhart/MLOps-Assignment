@@ -347,9 +347,29 @@ def feedback(payload: FeedbackPayload) -> FeedbackResponse:
         )
     except (ValueError, KeyError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PermissionError as exc:
+        logger.exception("Permission denied writing feedback to %s", FEEDBACK_PATH)
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Permission denied writing to {FEEDBACK_PATH}. "
+                "Fix the host directory permissions, e.g. "
+                "`chmod -R a+rwX data/feedback` or rebuild the container "
+                "with a matching UID."
+            ),
+        ) from exc
+    except OSError as exc:
+        logger.exception("OS error writing feedback to %s", FEEDBACK_PATH)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not save feedback to {FEEDBACK_PATH}: {exc}",
+        ) from exc
     except Exception as exc:  # pragma: no cover - defensive
         logger.exception("Failed to persist feedback")
-        raise HTTPException(status_code=500, detail="Could not save feedback") from exc
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not save feedback: {type(exc).__name__}: {exc}",
+        ) from exc
 
     total = len(load_feedback(path))
     FEEDBACK_ROWS.set(total)

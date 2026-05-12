@@ -30,6 +30,13 @@ COPY artifacts ./artifacts
 # Install package itself so `import heart_disease_mlops` works without PYTHONPATH.
 RUN pip install --no-deps -e .
 
+# Pre-create writable directories that may be bind-mounted at runtime so
+# the container still works when the host directories don't exist yet, and
+# so `data/feedback/feedback.csv` can be appended to under any UID that
+# has access to the volume.
+RUN mkdir -p /app/data/feedback /app/artifacts/models /app/artifacts/reports \
+    && chmod -R a+rwX /app/data /app/artifacts
+
 # Non-root user for safety.
 RUN useradd --create-home --uid 1000 appuser && chown -R appuser:appuser /app
 USER appuser

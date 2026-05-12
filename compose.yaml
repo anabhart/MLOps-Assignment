@@ -46,6 +46,10 @@ services:
       dockerfile: Containerfile
     image: heart-disease-api:latest
     container_name: heart-disease-api
+    # Run as the host user so bind-mounted volumes
+    # (./data/feedback, ./artifacts) remain writable. Falls back to the
+    # container's `appuser` (uid 1000) when UID/GID are not exported.
+    user: "${UID:-1000}:${GID:-1000}"
     depends_on:
       mlflow:
         condition: service_healthy
