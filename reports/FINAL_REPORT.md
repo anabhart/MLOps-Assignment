@@ -440,23 +440,222 @@ classification reports, confusion matrix/ROC PNGs, and the serialized
 joblib model from every successful CI run.
 
 
-## 9. Containerization & deployment
+## 9. Model Containerization
 
-```powershell
-# Build with podman
+### 9.1 Docker container design
+
+The API is containerized as a multi-stage OCI-compliant image using FastAPI
+and uvicorn. **Location**: [`Containerfile`](../Containerfile)
+
+**Key properties**:
+- **Base image**: `python:3.11-slim` — lean, security-patched
+- **Framework**: FastAPI 0.110+ (async, Pydantic validation, auto-docs)
+- **ASGI server**: uvicorn[standard]>=0.29 (production-ready async)
+- **Non-root execution**: `appuser` UID 1000 (security best practice)
+- **Health check**: HTTP GET `http://localhost:8000/health`; interval 30s,
+  timeout 5s, start-period 10s, max retries 3
+- **Port**: 8000 (exposed via `EXPOSE 8000`)
+- **Artifact mounting**: `/app/data/feedback` and `/app/artifacts` created
+  with `chmod a+rwX` to support bind-mounted volumes for feedback persistence
+  and model hot-reloading
+
+**Build & run**:
+```bash
+# With Docker
+docker build -t heart-disease-api:latest -f Containerfile .
+docker run --rm -p 8000:8000 heart-disease-api:latest
+
+# Or with podman (OCI-compliant)
 podman build -t heart-disease-api:latest -f Containerfile .
-
-# Run locally
 podman run --rm -p 8000:8000 heart-disease-api:latest
-
-# Smoke test
-curl http://localhost:8000/health
-curl -X POST http://localhost:8000/predict `
-     -H "Content-Type: application/json" `
-     -d (Get-Content api/example_requests.json -Raw)
 ```
 
-Kubernetes deployment instructions: see [`deploy/k8s/README.md`](../deploy/k8s/README.md).
+### 9.2 FastAPI application & request/response schemas
+
+**Location**: [`api/app.py`](../api/app.py)
+
+The API implements a production-grade model server with comprehensive
+validation, error handling, and observability.
+
+**Request schema** (Pydantic):
+
+```python
+class PatientFeatures(BaseModel):
+    """13-feature patient record from UCI Cleveland dataset."""
+    age: float = Field(..., ge=1, le=120)
+    sex: int = Field(..., ge=0, le=1, description="1=male, 0=female")
+    cp: int = Field(..., ge=1, le=4, description="Chest pain type 1-4")
+    trestbps: float = Field(..., ge=50, le=260, description="Resting BP (mm Hg)")
+    chol: float = Field(..., ge=50, le=700, description="Serum cholesterol (mg/dl)")
+    fbs: int = Field(..., ge=0, le=1, description="Fasting blood sugar > 120 mg/dl")
+    restecg: int = Field(..., ge=0, le=2)
+    thalach: float = Field(..., ge=40, le=260, description="Max heart rate")
+    exang: int = Field(..., ge=0, le=1, description="Exercise-induced angina")
+    oldpeak: float = Field(..., ge=-2.0, le=10.0)
+    slope: int = Field(..., ge=1, le=3)
+    ca: int = Field(..., ge=0, le=3)
+    thal: int = Field(..., description="3=normal, 6=fixed, 7=reversible defect")
+```
+
+**Response schema** (Pydantic):
+
+```python
+class PredictionResponse(BaseModel):
+    prediction: int  # 0 = no disease, 1 = disease
+    label: str       # "no_disease" or "disease"
+    probability: float  # P(disease) ∈ [0, 1]
+```
+
+### 9.3 REST endpoints
+
+| Endpoint | Method | Request | Response | Purpose |
+|----------|--------|---------|----------|---------|
+| `/health` | GET | — | `{"status": "ok", "model_loaded": "true"}` | Liveness check |
+| `/model-info` | GET | — | `{best_model, trained_at, test_metrics, model_path, model_loaded}` | Model metadata |
+| `/predict` | POST | `PatientFeatures` (JSON) | `PredictionResponse` | **Prediction with confidence** |
+| `/metrics` | GET | — | Prometheus text format | Observability |
+| `/feedback` | POST | `{features, true_label, predicted_label}` | `{saved, feedback_path, total_feedback_rows, correct}` | Feedback for retraining |
+| `/retrain` | POST | — | `{job_id, status, message}` | Trigger background retraining |
+| `/ui` | GET | — | HTML | Interactive web UI |
+
+### 9.4 /predict endpoint — detailed implementation
+
+**Endpoint signature** (`api/app.py` lines 264–295):
+
+```python
+@app.post("/predict", response_model=PredictionResponse)
+@mlflow.trace(name="predict", span_type="PREDICTOR")
+def predict(features: PatientFeatures) -> PredictionResponse:
+    """Predict heart disease risk and return probability."""
+    if _State.model is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+    
+    row = pd.DataFrame([features.model_dump()], columns=NUMERIC_FEATURES + CATEGORICAL_FEATURES)
+    proba = float(_State.model.predict_proba(row)[0, 1])
+    prediction = int(proba >= 0.5)
+    label = "disease" if prediction == 1 else "no_disease"
+    
+    return PredictionResponse(prediction=prediction, label=label, probability=round(proba, 4))
+```
+
+**Key features**:
+- ✅ **Automatic input validation**: Pydantic enforces all field ranges; invalid input returns 422
+- ✅ **Prediction + confidence**: Returns both binary class (0/1) and probability [0, 1]
+- ✅ **Pipeline preprocessing**: Features are automatically passed through the embedded ColumnTransformer
+  (median imputation + StandardScaler for numeric; mode imputation + OneHotEncoder for categorical)
+- ✅ **MLflow tracing**: Decorators capture request/response for observability in MLflow UI
+- ✅ **Structured metrics**: Prometheus counters and histograms recorded for request status/latency
+
+**Error handling**:
+- **503 Service Unavailable**: Model file not found (startup failure)
+- **422 Validation Error**: Invalid field ranges (e.g., `age > 120`)
+- **500 Internal Server Error**: Prediction failure (unlikely given pipeline robustness)
+
+### 9.5 Container execution with sample data
+
+**Sample requests** (`api/example_requests.json`):
+
+```json
+[
+  {
+    "age": 63, "sex": 1, "cp": 1, "trestbps": 145, "chol": 233,
+    "fbs": 1, "restecg": 2, "thalach": 150, "exang": 0,
+    "oldpeak": 2.3, "slope": 3, "ca": 0, "thal": 6
+  },
+  {
+    "age": 41, "sex": 0, "cp": 2, "trestbps": 130, "chol": 204,
+    "fbs": 0, "restecg": 2, "thalach": 172, "exang": 0,
+    "oldpeak": 1.4, "slope": 1, "ca": 0, "thal": 3
+  }
+]
+```
+
+**Build & run locally**:
+
+```bash
+# Build container
+docker build -t heart-disease-api -f Containerfile .
+
+# Run container, exposing port 8000
+docker run -d --name api -p 8000:8000 heart-disease-api
+
+# Health check
+curl http://localhost:8000/health
+# → {"status":"ok","model_loaded":"true"}
+
+# Single prediction
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "age": 63, "sex": 1, "cp": 1, "trestbps": 145, "chol": 233,
+    "fbs": 1, "restecg": 2, "thalach": 150, "exang": 0,
+    "oldpeak": 2.3, "slope": 3, "ca": 0, "thal": 6
+  }'
+# → {"prediction":1,"label":"disease","probability":0.95}
+
+# Batch predictions from example_requests.json
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d @api/example_requests.json | jq '.'
+
+# View auto-generated API docs
+# Open browser: http://localhost:8000/docs (Swagger)
+#               http://localhost:8000/redoc (ReDoc)
+```
+
+### 9.6 Container testing in CI/CD
+
+**CI smoke test** (`.github/workflows/ci.yml`, `container` job):
+
+```yaml
+- name: Build container image
+  run: docker build -f Containerfile -t heart-disease-api:ci .
+
+- name: Smoke test container
+  run: |
+    docker run -d --name api -p 8000:8000 heart-disease-api:ci
+    sleep 8
+    curl --fail --retry 5 --retry-delay 2 http://localhost:8000/health
+    curl --fail -X POST http://localhost:8000/predict \
+      -H 'Content-Type: application/json' \
+      -d @api/example_requests.json | head -c 500
+```
+
+This ensures every CI run:
+1. ✅ Builds the container from Containerfile
+2. ✅ Runs the container and waits for startup (8s)
+3. ✅ Verifies `/health` returns 200 (with 5 retries)
+4. ✅ Sends sample input to `/predict` and validates response
+
+### 9.7 Docker Compose orchestration (local development)
+
+**Location**: [`compose.yaml`](../compose.yaml)
+
+Brings up a full stack locally:
+- **MLflow**: Tracking server on port 5000
+- **API**: FastAPI server on port 8000 (depends_on MLflow health)
+- **Volumes**: Bind-mounts for artifacts, models, feedback persistence
+
+```bash
+# Bring up stack
+docker compose up -d --build
+
+# Check health
+curl http://localhost:8000/health
+curl http://localhost:5000/health
+
+# View logs
+docker compose logs -f api
+
+# Tear down
+docker compose down -v
+```
+
+This enables full local development without Kubernetes.
+
+### 9.8 Deployment to Kubernetes
+
+See [`deploy/k8s/README.md`](../deploy/k8s/README.md) for detailed Kubernetes deployment using kind (local) or cloud providers.
 
 ## 10. Monitoring & drift
 

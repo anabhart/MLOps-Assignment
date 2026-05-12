@@ -301,7 +301,31 @@
 
 ---
 
-### Requirement 6: Monitoring & Observability (5 marks)
+### Requirement 6: Model Containerization (5 marks)
+- [x] **Docker/Podman container for model-serving API** — FastAPI application packaged as OCI image
+  - Evidence: `Containerfile` (55 lines) — `FROM python:3.11-slim`, FastAPI + uvicorn, non-root user (`appuser` UID 1000)
+- [x] **Expose /predict endpoint** — POST endpoint accepting 13-feature JSON input
+  - Evidence: `api/app.py` lines 264-295 — `@app.post("/predict")` with Pydantic `PatientFeatures` request schema
+- [x] **Accept JSON input** — Request validation with Pydantic for all 13 UCI features
+  - Evidence: `PatientFeatures` BaseModel with field ranges (age 1-120, sex 0-1, cp 1-4, etc.) + validation errors return 422
+- [x] **Return prediction and confidence** — Response schema includes prediction (0/1), label, and probability
+  - Evidence: `PredictionResponse` BaseModel with `prediction: int`, `label: str`, `probability: float` [0, 1]
+- [x] **Container built and run locally** — Build verified, container runs on localhost:8000
+  - Evidence: `docker build -t heart-disease-api -f Containerfile .` + `docker run -p 8000:8000 heart-disease-api`
+- [x] **Sample input testing** — Example requests provided and tested against /predict endpoint
+  - Evidence: `api/example_requests.json` (2 sample patients) used in CI smoke test + manual curl commands documented in README
+- [x] **Health check** — Container includes health check probe for orchestration readiness
+  - Evidence: `HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD curl -fsS http://localhost:8000/health`
+- [x] **Embedding preprocessing** — Full sklearn Pipeline (preprocessor + classifier) serialized into container
+  - Evidence: Model in `artifacts/models/best_model.joblib` includes `ColumnTransformer` + classifier; no separate preprocessing step needed
+- [x] **CI smoke test** — Container build + /health + /predict tested automatically in GitHub Actions
+  - Evidence: `.github/workflows/ci.yml` `container` job — `docker build`, `curl /health`, `curl -X POST /predict @example_requests.json`
+
+**Status**: ✅ **COMPLETE** (5/5 marks)
+
+---
+
+### Requirement 8: Monitoring & Logging (5 marks)
 - [x] **Structured logging** — JSON request/response logs
   - Evidence: `api/logging_config.py` — JSON formatter with timestamp, method, path, status
 - [x] **Prometheus metrics** — `/metrics` endpoint with counters + histograms
@@ -319,7 +343,7 @@
 
 ---
 
-### Requirement 7: Containerization & Testing (5 marks)
+### Requirement 7: Production Deployment (7 marks)
 - [x] **Docker/Podman container** — Multi-stage Containerfile
   - Evidence: `Containerfile` (35 lines) — Python 3.11-slim, uvicorn ENTRYPOINT
 - [x] **Container health check** — Readiness probe defined
@@ -337,7 +361,7 @@
 
 ---
 
-### Requirement 8: Production Deployment (7 marks)
+### Requirement 9: Production Deployment (7 marks)
 - [x] **Kubernetes manifests** — Deployment, Service, Ingress
   - Evidence: `deploy/k8s/deployment.yaml`, `deploy/k8s/service.yaml`, `deploy/k8s/ingress.yaml`
 - [x] **MLflow integration** — In-cluster MLflow server for tracking

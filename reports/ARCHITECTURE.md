@@ -96,7 +96,42 @@ The `ColumnTransformer` preprocessor (`preprocessing.py`) is **always fitted
 and serialized inside the Pipeline object** — there is no separate preprocessing
 artifact and no risk of train/serve skew.
 
+## Model Containerization
 
+The API is containerized as an OCI-compliant image (Docker / podman):
+
+```mermaid
+flowchart LR
+    Containerfile["Containerfile\n(multi-stage)"]
+    Python["python:3.11-slim\nbase image"]
+    FastAPI["FastAPI +\nuvicorn"]
+    Joblib["best_model.joblib\n(bind-mounted)"]
+    Image["heart-disease-api:latest\nOCI image"]
+    Container["docker run\n-p 8000:8000"]
+    Health["GET /health\n(healthcheck)"]
+
+    Containerfile --> Python
+    Containerfile --> FastAPI
+    Containerfile --> Joblib
+    Python & FastAPI & Joblib --> Image
+    Image --> Container
+    Container --> Health
+```
+
+**Containerfile highlights**:
+- ✅ Non-root user (`appuser`, UID 1000) — security best practice
+- ✅ Health check — `curl http://localhost:8000/health` every 30s
+- ✅ Exposed port 8000
+- ✅ Embedded sklearn `Pipeline` with preprocessing
+- ✅ MLflow integration for request tracing
+
+**API endpoints**:
+- `GET /health` — liveness check (`{"status":"ok","model_loaded":true}`)
+- `POST /predict` — accepts 13-feature JSON, returns `{prediction, label, probability}`
+- `GET /metrics` — Prometheus metrics
+- `POST /feedback` — feedback submission for model retraining
+- `POST /retrain` — trigger background retraining
+- `GET /docs` — auto-generated Swagger/OpenAPI docs
 
 ## Request path
 

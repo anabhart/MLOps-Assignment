@@ -146,6 +146,117 @@ pytest --cov=heart_disease_mlops
 ruff check src tests api
 ```
 
+## Model Containerization (Requirement 6)
+
+### FastAPI application
+
+The model-serving API is built with FastAPI and exposes multiple endpoints:
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/health` | GET | Liveness check |
+| `/model-info` | GET | Model metadata |
+| **`/predict`** | **POST** | **Binary prediction + confidence** |
+| `/metrics` | GET | Prometheus metrics |
+| `/feedback` | POST | Feedback submission |
+| `/retrain` | POST | Trigger background retraining |
+
+### /predict endpoint (JSON input/output)
+
+**Request** (Pydantic-validated JSON):
+```json
+{
+  "age": 63,
+  "sex": 1,
+  "cp": 1,
+  "trestbps": 145,
+  "chol": 233,
+  "fbs": 1,
+  "restecg": 2,
+  "thalach": 150,
+  "exang": 0,
+  "oldpeak": 2.3,
+  "slope": 3,
+  "ca": 0,
+  "thal": 6
+}
+```
+
+**Response** (prediction + confidence):
+```json
+{
+  "prediction": 1,
+  "label": "disease",
+  "probability": 0.95
+}
+```
+
+### Container build & run locally
+
+**Build**:
+```bash
+# Docker
+docker build -t heart-disease-api -f Containerfile .
+
+# Or podman (OCI-compatible)
+podman build -t heart-disease-api -f Containerfile .
+```
+
+**Run**:
+```bash
+docker run -d --name api -p 8000:8000 heart-disease-api
+# Wait for startup
+sleep 8
+
+# Health check
+curl http://localhost:8000/health
+# → {"status":"ok","model_loaded":"true"}
+
+# Single prediction
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "age": 63, "sex": 1, "cp": 1, "trestbps": 145, "chol": 233,
+    "fbs": 1, "restecg": 2, "thalach": 150, "exang": 0,
+    "oldpeak": 2.3, "slope": 3, "ca": 0, "thal": 6
+  }'
+# → {"prediction":1,"label":"disease","probability":0.95}
+
+# Batch predictions from example_requests.json
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d @api/example_requests.json
+
+# Interactive API docs (Swagger)
+# Open http://localhost:8000/docs
+```
+
+**Tear down**:
+```bash
+docker stop api && docker rm api
+```
+
+### Container features
+
+✅ **Multi-stage build** — minimal final image size  
+✅ **Non-root user** — runs as `appuser` (UID 1000) for security  
+✅ **Health check** — `curl http://localhost:8000/health` with retries  
+✅ **Prometheus metrics** — `/metrics` for observability  
+✅ **Input validation** — Pydantic enforces all field ranges; 422 on invalid input  
+✅ **Embedded preprocessing** — sklearn `ColumnTransformer` inside the model  
+✅ **MLflow tracing** — `/predict` requests emitted as MLflow spans for monitoring  
+✅ **Volume mounts** — `/app/data/feedback` and `/app/artifacts` support bind-mounted volumes
+
+### Docker Compose (local development)
+
+Bring up a full stack (API + MLflow) locally:
+
+```bash
+docker compose up -d --build
+# API on port 8000, MLflow on port 5000
+docker compose down -v
+```
+
 ## Quickstart
 
 ### 1. Install
