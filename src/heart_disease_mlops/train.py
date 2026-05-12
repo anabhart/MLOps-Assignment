@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import joblib
+import matplotlib.pyplot as plt
 import mlflow
 import mlflow.sklearn
 import numpy as np
@@ -28,7 +29,7 @@ from .config import (
     ensure_dirs,
 )
 from .data import load_training_dataset, train_test_split_df
-from .evaluate import evaluation_report
+from .evaluate import evaluation_report, plot_confusion_matrix, plot_roc_curve
 from .preprocessing import build_preprocessor
 
 
@@ -247,6 +248,28 @@ def train_and_log_all(
             report_path = REPORTS_DIR / f"{spec.name}_classification_report.txt"
             report_path.write_text(test_eval["classification_report"], encoding="utf-8")
             mlflow.log_artifact(str(report_path))
+
+            # Log diagnostic plots as artifacts for every training run.
+            cm_path = REPORTS_DIR / f"{spec.name}_confusion_matrix.png"
+            cm_fig = plot_confusion_matrix(
+                y_test,
+                test_eval["y_pred"],
+                title=f"{spec.name} confusion matrix",
+                save_path=cm_path,
+            )
+            plt.close(cm_fig)
+            mlflow.log_artifact(str(cm_path))
+
+            if test_eval["y_proba"] is not None:
+                roc_path = REPORTS_DIR / f"{spec.name}_roc_curve.png"
+                roc_fig = plot_roc_curve(
+                    y_test,
+                    test_eval["y_proba"],
+                    title=f"{spec.name} ROC curve",
+                    save_path=roc_path,
+                )
+                plt.close(roc_fig)
+                mlflow.log_artifact(str(roc_path))
 
             mlflow.sklearn.log_model(best_pipe, artifact_path="model")
 

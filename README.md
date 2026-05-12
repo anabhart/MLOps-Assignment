@@ -39,6 +39,26 @@ Both use the same preprocessing pipeline:
 
 Hyperparameter tuning via GridSearchCV with 5-fold stratified cross-validation on ROC-AUC. Full results in `artifacts/reports/training_summary.json` and classification reports.
 
+## Experiment Tracking (Requirement 3)
+
+MLflow is integrated across training, retraining, API tracing, and orchestration.
+
+- Tracking URI resolution: `MLFLOW_SERVER_URI` / `MLFLOW_TRACKING_URI` with local fallback.
+- Parameters logged per model run: best hyperparameters, model family, CV settings, train/feedback row counts.
+- Metrics logged per model run: CV best score and test metrics (accuracy, precision, recall, F1, ROC-AUC).
+- Artifacts logged per model run: classification report, confusion matrix PNG, ROC curve PNG, and serialized ML model.
+- Experiment separation:
+  - `heart-disease-cleveland` (training)
+  - `heart-disease-feedback-retrain` (feedback-triggered retraining)
+  - `heart-disease-serving` (API traces)
+  - `heart-disease-prefect` (flow runs)
+
+Use the UI to inspect tracked runs:
+
+```powershell
+mlflow ui --backend-store-uri mlruns
+```
+
 ## Quickstart
 
 ### 1. Install

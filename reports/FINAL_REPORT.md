@@ -158,18 +158,48 @@ Full training workflow documented in `notebooks/02_training_and_analysis.ipynb`:
 
 ## 5. Experiment tracking
 
-MLflow is integrated directly inside `train.py`. Each model family is logged
-as its own run with:
+MLflow is integrated directly in the training and serving stack and satisfies
+the experiment-tracking requirement (parameters, metrics, artifacts, plots).
 
-* **Parameters**: best hyperparameters from grid search, model family.
-* **Metrics**: cross-validated ROC-AUC + test accuracy / precision / recall /
-  F1 / ROC-AUC.
-* **Artifacts**: per-model classification report (`*_classification_report.txt`).
-* **Model**: `mlflow.sklearn.log_model` with the full preprocessing +
-  classifier pipeline.
+### 5.1 Tracking setup and experiments
 
-The selected best model is also registered in the MLflow Model Registry as
-`heart-disease-classifier`. The local file store lives at `mlruns/`.
+Training resolves tracking with `MLFLOW_SERVER_URI` / `MLFLOW_TRACKING_URI`
+and falls back to local file tracking under `mlruns/` when unset.
+
+Experiments are separated by workload:
+- `heart-disease-cleveland`: baseline training runs
+- `heart-disease-feedback-retrain`: feedback-driven retraining runs
+- `heart-disease-serving`: API trace spans
+- `heart-disease-prefect`: orchestration-triggered runs
+
+### 5.2 What is logged for each training run
+
+For every model run (Logistic Regression and Random Forest), the pipeline logs:
+
+- **Parameters**
+  - Best hyperparameters from GridSearchCV
+  - Model family
+  - CV scoring strategy and number of folds
+  - Training and feedback row counts
+
+- **Metrics**
+  - `cv_best_score` (ROC-AUC)
+  - Test metrics: accuracy, precision, recall, F1, ROC-AUC
+
+- **Artifacts**
+  - Classification report text file
+  - Confusion matrix plot (`*_confusion_matrix.png`)
+  - ROC curve plot (`*_roc_curve.png`)
+  - Serialized MLflow model artifact (`mlflow.sklearn.log_model`)
+
+The best model is persisted locally as `artifacts/models/best_model.joblib`
+and registered in MLflow Model Registry as `heart-disease-classifier`.
+
+### 5.3 Trace logging
+
+Beyond run-level logging, API predict/retrain paths emit MLflow traces/spans,
+so both model-quality history and serving-time behavior are observable in the
+same tracking system.
 
 ## 6. Architecture
 

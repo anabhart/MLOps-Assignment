@@ -207,21 +207,23 @@
 
 ---
 
-### Requirement 3: Experiment Tracking & Management (5 marks)
-- [x] **MLflow tracking** — Integrated in training pipeline
-  - Evidence: `src/heart_disease_mlops/train.py` + `api/tracing.py` with @mlflow.trace decorators
-- [x] **Parameter logging** — Hyperparameters, model family, CV config
-  - Evidence: `mlflow.log_dict()` for grid search params in `train_and_log_all()`
-- [x] **Metric logging** — CV scores + test metrics (accuracy, F1, ROC-AUC)
-  - Evidence: `mlflow.log_metrics()` calls in training code
-- [x] **Artifact logging** — Models, classification reports, datasets
-  - Evidence: `.joblib` models + `.txt` reports in MLflow artifacts
-- [x] **Model registry promotion** — Models registered with staging/production tags
-  - Evidence: `src/heart_disease_mlops/registry.py` — `promote_to_staging()`, `promote_to_production()`
-- [x] **Experiment organization** — Separate experiments for feedback-retrain + serving
-  - Evidence: MLflow UI shows `heart-disease-feedback-retrain` experiment with 52+ runs
+### Requirement 3: Experiment Tracking (5 marks)
+- [x] **MLflow integration** — Tracking wired into training, retraining, serving traces, and Prefect flow runs
+  - Evidence: `src/heart_disease_mlops/train.py`, `api/tracing.py`, `pipelines/prefect_flow.py`
+- [x] **Parameters logged for all training runs** — Best hyperparameters, model family, CV config, data row counts
+  - Evidence: `mlflow.log_params(...)` + `mlflow.log_param(...)` in `train_and_log_all()`
+- [x] **Metrics logged for all training runs** — CV best score + test metrics (accuracy, precision, recall, F1, ROC-AUC)
+  - Evidence: `mlflow.log_metric("cv_best_score", ...)` + `mlflow.log_metrics(...)`
+- [x] **Artifacts logged for all training runs** — Text reports + model artifacts
+  - Evidence: `mlflow.log_artifact(classification_report)` + `mlflow.sklearn.log_model(...)`
+- [x] **Plots logged for all training runs** — Confusion matrix and ROC curve PNGs
+  - Evidence: explicit `mlflow.log_artifact(...)` for `*_confusion_matrix.png` and `*_roc_curve.png` in `train.py`
+- [x] **Experiment separation** — Dedicated experiments by workload
+  - Evidence: `heart-disease-cleveland`, `heart-disease-feedback-retrain`, `heart-disease-serving`, `heart-disease-prefect`
+- [x] **Model registry promotion** — Best model registered as `heart-disease-classifier`
+  - Evidence: registry log + model registration step in `train_and_log_all()`
 
-**Status**: ✅ **COMPLETE**
+**Status**: ✅ **COMPLETE** (5/5 marks)
 
 ---
 
@@ -307,7 +309,7 @@
 |-----|-------|-------|--------|----------|
 | 1 | Data Acquisition & EDA | 5 | ✅ | `notebooks/01_eda.ipynb`, `data/processed/`, `src/heart_disease_mlops/` |
 | 2 | Model Training & Evaluation | 5 | ✅ | `src/heart_disease_mlops/train.py`, `artifacts/reports/` |
-| 3 | Experiment Tracking & Management | 5 | ✅ | MLflow experiments (52 runs), `src/heart_disease_mlops/registry.py` |
+| 3 | Experiment Tracking | 5 | ✅ | MLflow params + metrics + artifacts + plots per training run |
 | 4 | REST API & Inference | 5 | ✅ | `api/app.py`, `/docs` endpoint, retrain/feedback endpoints |
 | 5 | Monitoring & Observability | 5 | ✅ | `api/logging_config.py`, `/metrics` endpoint, `monitoring/drift_detection.py` |
 | 6 | Containerization & Testing | 5 | ✅ | `Containerfile`, `tests/` (21 passing), `.github/workflows/ci.yml` |
