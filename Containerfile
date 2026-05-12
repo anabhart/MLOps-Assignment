@@ -26,6 +26,7 @@ RUN pip install -r requirements.txt \
 COPY src ./src
 COPY api ./api
 COPY artifacts ./artifacts
+COPY data ./data
 
 # Install package itself so `import heart_disease_mlops` works without PYTHONPATH.
 RUN pip install --no-deps -e .

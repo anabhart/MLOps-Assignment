@@ -34,6 +34,10 @@ spec:
           env:
             - name: HEART_DISEASE_MODEL_PATH
               value: /app/artifacts/models/best_model.joblib
+            - name: MLFLOW_SERVER_URI
+              value: http://heart-disease-mlflow:5000
+            - name: MLFLOW_TRACKING_URI
+              value: http://heart-disease-mlflow:5000
           readinessProbe:
             httpGet:
               path: /health
