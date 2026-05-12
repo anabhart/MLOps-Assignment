@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: heart-disease-mlflow
+  namespace: heart-disease
+  labels:
+    app: heart-disease-mlflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: heart-disease-mlflow
+  template:
+    metadata:
+      labels:
+        app: heart-disease-mlflow
+    spec:
+      containers:
+        - name: mlflow
+          image: ghcr.io/mlflow/mlflow:v3.0.0
+          args:
+            - mlflow
+            - server
+            - --backend-store-uri
+            - /mlflow/mlruns
+            - --default-artifact-root
+            - mlflow-artifacts:/
+            - --serve-artifacts
+            - --artifacts-destination
+            - /mlflow/mlruns
+            - --host
+            - 0.0.0.0
+            - --port
+            - "5000"
+          ports:
+            - name: http
+              containerPort: 5000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          volumeMounts:
+            - name: mlruns
+              mountPath: /mlflow/mlruns
+      volumes:
+        - name: mlruns
+          emptyDir: {}

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: heart-disease-mlflow
+  namespace: heart-disease
+  labels:
+    app: heart-disease-mlflow
+spec:
+  selector:
+    app: heart-disease-mlflow
+  ports:
+    - name: http
+      protocol: TCP
+      port: 5000
+      targetPort: 5000
+  type: ClusterIP
