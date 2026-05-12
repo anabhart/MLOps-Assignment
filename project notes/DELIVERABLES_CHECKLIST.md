@@ -325,11 +325,13 @@
 
 ---
 
-### Requirement 8: Monitoring & Logging (5 marks)
+### Requirement 8: Monitoring & Logging (3 marks)
 - [x] **Structured logging** — JSON request/response logs
   - Evidence: `api/logging_config.py` — JSON formatter with timestamp, method, path, status
 - [x] **Prometheus metrics** — `/metrics` endpoint with counters + histograms
-  - Evidence: `api/app.py` — `request_count`, `request_duration`, `prediction_count` metrics
+  - Evidence: `api/app.py` — `predict_requests_total`, `predict_latency_seconds`, `predict_predictions_total`, `feedback_rows`, `retrain_runs_total`
+- [x] **Simple monitoring dashboard** — Prometheus + Grafana stack
+  - Evidence: `compose.yaml` (`prometheus`, `grafana` services) + `monitoring/prometheus/prometheus.yml` + `monitoring/grafana/dashboards/api-monitoring.json`
 - [x] **Request tracing** — MLflow trace IDs in logs + spans
   - Evidence: `api/tracing.py` — @mlflow.trace decorators on predict/retrain paths
 - [x] **Health check** — `/health` endpoint for liveness probe
@@ -365,6 +367,26 @@
     - `api-health-success-and-predict-response.png` — API responses
 
 **Status**: ✅ **COMPLETE** (All 7 requirements verified and evidenced)
+
+---
+
+### Requirement 9: Documentation & Reporting (2 marks)
+- [x] **Professional Markdown report** — final report drafted in Markdown
+  - Evidence: `reports/FINAL_REPORT.md`
+- [x] **Setup/install instructions** — local environment setup and common run commands documented
+  - Evidence: `reports/FINAL_REPORT.md` Section 2 + `README.md`
+- [x] **EDA and modelling choices** — dataset characteristics, preprocessing design, model comparison, and selection rationale documented
+  - Evidence: `reports/FINAL_REPORT.md` Sections 3 and 4
+- [x] **Experiment tracking summary** — MLflow experiments, logged artifacts, metrics, and traces documented
+  - Evidence: `reports/FINAL_REPORT.md` Section 5
+- [x] **Architecture diagram** — Mermaid architecture diagrams included
+  - Evidence: `reports/FINAL_REPORT.md` Section 7 + `reports/ARCHITECTURE.md`
+- [x] **CI/CD and deployment screenshots** — report embeds deployment and UI screenshots
+  - Evidence: `reports/screenshots/` + `reports/FINAL_REPORT.md` Section 14.1
+- [x] **Repository link** — code repository URL included in the report
+  - Evidence: `reports/FINAL_REPORT.md` Section 13
+
+**Status**: ✅ **COMPLETE** (2/2 marks)
 
 ---
 

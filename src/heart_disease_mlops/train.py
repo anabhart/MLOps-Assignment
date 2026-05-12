@@ -144,20 +144,39 @@ def tune_model(
     return grid
 
 
+def _local_tracking_uri() -> str:
+    offline_dir = MLRUNS_DIR / "offline"
+    offline_dir.mkdir(parents=True, exist_ok=True)
+    return offline_dir.resolve().as_uri()
+
+
 def _resolve_tracking_uri() -> str:
     """Pick the MLflow tracking URI: env vars > local file store fallback."""
     for var in ("MLFLOW_SERVER_URI", "MLFLOW_TRACKING_URI"):
         val = os.environ.get(var)
         if val:
             return val
-    MLRUNS_DIR.mkdir(parents=True, exist_ok=True)
-    return MLRUNS_DIR.resolve().as_uri()
+    return _local_tracking_uri()
+
+
+def _set_tracking_uri(uri: str) -> None:
+    os.environ["MLFLOW_TRACKING_URI"] = uri
+    os.environ["MLFLOW_SERVER_URI"] = uri
+    mlflow.set_tracking_uri(uri)
 
 
 def _setup_mlflow(experiment_name: str = "heart-disease-cleveland") -> None:
     ensure_dirs()
-    mlflow.set_tracking_uri(_resolve_tracking_uri())
-    mlflow.set_experiment(experiment_name)
+    tracking_uri = _resolve_tracking_uri()
+    _set_tracking_uri(tracking_uri)
+    try:
+        mlflow.set_experiment(experiment_name)
+    except Exception:
+        fallback_uri = _local_tracking_uri()
+        if tracking_uri == fallback_uri:
+            raise
+        _set_tracking_uri(fallback_uri)
+        mlflow.set_experiment(experiment_name)
     # Autolog params/metrics/model and emit fit/predict spans as traces.
     # `disable=False` re-enables in case a previous call set it; we use
     # `silent=True` to keep training logs clean.

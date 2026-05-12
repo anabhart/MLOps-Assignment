@@ -21,23 +21,97 @@ the only one used in published literature.
 
 ## 2. Setup & install
 
+### 2.1 Ubuntu end-to-end setup
+
+The clearest local demonstration path is: install Docker, `kubectl`, and `kind`; clone the repository; install Python dependencies; then run one helper script that brings up Kubernetes, MLflow, Prometheus, and Grafana.
+
+```bash
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg lsb-release git python3 python3-venv python3-pip
+
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo usermod -aG docker "$USER"
+
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+sudo install -m 0755 kubectl /usr/local/bin/kubectl
+rm kubectl
+
+curl -Lo ./kind "https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64"
+chmod +x ./kind
+sudo mv ./kind /usr/local/bin/kind
+
+newgrp docker
+
+git clone https://github.com/anabhart/MLOps-Assignment.git
+cd MLOps-Assignment
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+pip install -e ".[dev,api]"
+
+./deploy/k8s/bringup.sh
+```
+
+After the script completes, the user can open these endpoints directly in a browser:
+
+- http://localhost:8000/
+- http://localhost:8000/docs
+- http://127.0.0.1:5000/
+- http://localhost:8000/metrics
+- http://localhost:3000/d/heart-disease-api-monitoring/heart-disease-api-monitoring?orgId=1&refresh=10s
+
+Grafana login: `admin` / `admin`
+
+To return the machine to a clean local state:
+
+```bash
+./deploy/k8s/bringdown.sh
+```
+
+```bash
+git clone https://github.com/anabhart/MLOps-Assignment.git
+cd MLOps-Assignment
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install -e ".[dev,api]"
+```
+
+Alternative on Windows PowerShell:
+
 ```powershell
-# Windows PowerShell
-git clone <repo-url>
-cd MLOPS
+git clone https://github.com/anabhart/MLOps-Assignment.git
+cd MLOps-Assignment
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 pip install -e ".[dev,api]"
 ```
 
-Run the full pipeline:
+Common local commands:
 
-Or, end-to-end via Prefect:
+```bash
+# Train the model and log runs to MLflow
+python -m heart_disease_mlops
 
-```powershell
+# Start the local serving + MLflow + monitoring stack
+docker compose up -d --build
+
+# Or run the Prefect pipeline end to end
 python pipelines/prefect_flow.py
 ```
+
+## 3. Data & EDA
+
 | Target | Binary (`num >= 1` ⇒ disease) |
 | Class balance | ~54% no-disease / 46% disease |
 | Missing values | 6 rows (in `ca`, `thal`) → dropped |
@@ -296,6 +370,23 @@ serving environments.
 ## 7. Architecture
 
 See [`reports/ARCHITECTURE.md`](ARCHITECTURE.md) for diagrams.
+
+### 7.1 High-level architecture diagram
+
+```mermaid
+flowchart LR
+    UCI[(UCI Cleveland dataset)] --> Prep[Preprocessing + validation]
+    Prep --> Train[Model training + tuning]
+    Train --> MLflow[(MLflow tracking + registry)]
+    Train --> Model[(best_model.joblib)]
+    Prefect[Prefect flow] --> Train
+    Model --> API[FastAPI service]
+    API --> Metrics[Prometheus /metrics]
+    API --> Logs[Structured JSON logs]
+    API --> K8s[Kubernetes deployment]
+    GH[GitHub Actions CI/CD] --> Train
+    GH --> K8s
+```
 
 * **Pipeline package** (`src/heart_disease_mlops/`) is the single source of
   truth — imported by tests, the API, and the Prefect flow.
@@ -633,18 +724,94 @@ This enables full local development without Kubernetes.
 
 See [`deploy/k8s/README.md`](../deploy/k8s/README.md) for detailed Kubernetes deployment using kind (local) or cloud providers.
 
-## 10. Monitoring & drift
+## 10. Monitoring & Logging (Requirement 8)
 
-* **Logs**: `api/logging_config.py` configures JSON logs on stdout. Each
-  request emits `method`, `path`, `status`, `latency_ms`, `client`.
-* **Metrics**: `prometheus_client` exposes `/metrics`:
-  * `predict_requests_total{status}`
-  * `predict_latency_seconds` (histogram)
-  * `predict_predictions_total{label}`
-* **Drift**: `python monitoring/drift_detection.py` writes
-  `artifacts/reports/drift_report.html` + `.json` and exits non-zero when
-  the share of drifted features exceeds the configurable threshold.
-* **Retraining runbook**: [`monitoring/RETRAINING_RUNBOOK.md`](../monitoring/RETRAINING_RUNBOOK.md).
+Requirement 8 asks for two deliverables: API request logging and simple monitoring
+dashboarding. Both are implemented and runnable locally.
+
+### 10.1 API request logging
+
+Structured JSON logging is configured in `api/logging_config.py` and enforced by
+request middleware in `api/app.py`.
+
+Each HTTP request emits:
+- `method`
+- `path`
+- `status`
+- `latency_ms`
+- `client`
+
+Example log stream:
+
+```bash
+docker logs -f heart-disease-api
+```
+
+### 10.2 Prometheus metrics
+
+The API exposes a Prometheus scrape endpoint at `GET /metrics`.
+
+Implemented metrics:
+- `predict_requests_total{status}`
+- `predict_latency_seconds` (histogram)
+- `predict_predictions_total{label}`
+- `feedback_submissions_total{correct}`
+- `feedback_rows` (gauge)
+- `retrain_runs_total{status}`
+
+### 10.3 Grafana dashboard
+
+Prometheus and Grafana are integrated in `compose.yaml`:
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3000` (default `admin/admin`)
+
+Provisioned files:
+- `monitoring/prometheus/prometheus.yml` (scrapes `api:8000/metrics`)
+- `monitoring/grafana/provisioning/datasources/datasource.yml`
+- `monitoring/grafana/provisioning/dashboards/dashboard.yml`
+- `monitoring/grafana/dashboards/api-monitoring.json`
+
+The preloaded Grafana dashboard **Heart Disease API Monitoring** includes:
+- prediction request rate
+- p50/p95 prediction latency
+- request status breakdown
+- predicted class counts
+- feedback rows (stat)
+- retrain run outcomes
+
+### 10.4 Demonstration steps
+
+```bash
+# Start full stack (MLflow + API + Prometheus + Grafana)
+docker compose up -d --build
+
+# Generate sample inference traffic
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{"age":63,"sex":1,"cp":1,"trestbps":145,"chol":233,"fbs":1,"restecg":2,"thalach":150,"exang":0,"oldpeak":2.3,"slope":3,"ca":0,"thal":6}'
+
+# Verify metrics endpoint
+curl http://localhost:8000/metrics | head
+```
+
+This satisfies Requirement 8 via both logs and a live API metrics dashboard.
+
+### 10.5 Drift monitoring
+
+In addition to request monitoring, data drift checks are provided by Evidently:
+
+```bash
+python monitoring/drift_detection.py
+```
+
+Outputs:
+- `artifacts/reports/drift_report.html`
+- `artifacts/reports/drift_report.json`
+
+Exit behavior:
+- exits non-zero when drifted feature share exceeds configured threshold.
+
+Retraining runbook: [`monitoring/RETRAINING_RUNBOOK.md`](../monitoring/RETRAINING_RUNBOOK.md).
 
 ## 11. Results summary
 
@@ -669,7 +836,38 @@ after each training run.)
 
 ## 13. Repository
 
-* Code, manifests, notebooks, and reports: this repository.
+* Code repository: <https://github.com/anabhart/MLOps-Assignment>
 * CI status: GitHub Actions tab.
 * Container image: built locally via podman; published to GHCR in CI when
   enabled.
+
+## 14. Documentation & Reporting (Requirement 9)
+
+Requirement 9 asks for a professional report containing setup instructions,
+EDA and modelling choices, experiment-tracking summary, an architecture diagram,
+CI/CD and deployment screenshots, and the repository link. This report satisfies
+those items as follows:
+
+- **Setup/install instructions**: Section 2
+- **EDA and modelling choices**: Sections 3 and 4
+- **Experiment tracking summary**: Section 5
+- **Architecture diagram**: Section 7 and [`reports/ARCHITECTURE.md`](ARCHITECTURE.md)
+- **Repository link**: Section 13
+
+### 14.1 CI/CD and deployment workflow screenshots
+
+**Kubernetes resources after deployment**
+
+![Kubernetes pods, services, and ingress status](screenshots/k8s-pods-services-ingress-status.png)
+
+**Swagger /docs endpoint after deployment**
+
+![Swagger docs page](screenshots/api-docs-page.png)
+
+**API health and prediction response**
+
+![Health check and predict response](screenshots/api-health-success-and-predict-response.png)
+
+**MLflow tracking UI**
+
+![MLflow UI running](screenshots/mlflow-ui-running.png)

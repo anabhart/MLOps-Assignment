@@ -9,11 +9,113 @@ This folder satisfies requirement 7 using Kubernetes manifests:
 - MLflow Deployment: [mlflow-deployment.yaml](mlflow-deployment.yaml)
 - MLflow Service: [mlflow-service.yaml](mlflow-service.yaml)
 - **Deployment Script: [deploy.sh](deploy.sh)** ⭐ Use this for automated deployment
-- **Helper Bring-Up Script: [bringup.sh](bringup.sh)** ⭐ Brings up K8s + MLflow UI
-- **Helper Bring-Down Script: [bringdown.sh](bringdown.sh)** ⭐ Cleans up K8s + MLflow UI
+- **Helper Bring-Up Script: [bringup.sh](bringup.sh)** ⭐ Brings up K8s + MLflow + Prometheus + Grafana
+- **Helper Bring-Down Script: [bringdown.sh](bringdown.sh)** ⭐ Cleans up K8s + MLflow + Prometheus + Grafana
 
 You can deploy on local Kubernetes (kind/minikube/Docker Desktop) or managed
 cloud Kubernetes (GKE/EKS/AKS).
+
+## Recommended Ubuntu flow
+
+If you want the exact local browser endpoints below after setup, follow this sequence from a clean Ubuntu machine:
+
+- http://localhost:8000/
+- http://127.0.0.1:5000/
+- http://localhost:8000/metrics
+- http://localhost:3000/d/heart-disease-api-monitoring/heart-disease-api-monitoring?orgId=1&refresh=10s
+
+### 0. Install prerequisites
+
+```bash
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg lsb-release git python3 python3-venv python3-pip
+
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo usermod -aG docker "$USER"
+
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+sudo install -m 0755 kubectl /usr/local/bin/kubectl
+rm kubectl
+
+curl -Lo ./kind "https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64"
+chmod +x ./kind
+sudo mv ./kind /usr/local/bin/kind
+
+newgrp docker
+docker --version
+kubectl version --client
+kind --version
+```
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/anabhart/MLOps-Assignment.git
+cd MLOps-Assignment
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+pip install -e ".[dev,api]"
+```
+
+### 2. Bring everything up
+
+```bash
+./deploy/k8s/bringup.sh
+```
+
+This script now performs the full local demo flow in order:
+
+1. Builds the Docker image.
+2. Creates or reuses the `kind` cluster.
+3. Deploys the API and MLflow manifests.
+4. Waits for both deployments to report ready.
+5. Port-forwards the API to `localhost:8000`.
+6. Port-forwards MLflow to `127.0.0.1:5000`.
+7. Starts Prometheus on `localhost:9090`.
+8. Starts Grafana on `localhost:3000`.
+9. Verifies `/health`, `/metrics`, Prometheus, and Grafana.
+
+### 3. Open the working endpoints
+
+```text
+http://localhost:8000/
+http://localhost:8000/docs
+http://127.0.0.1:5000/
+http://localhost:8000/metrics
+http://localhost:3000/d/heart-disease-api-monitoring/heart-disease-api-monitoring?orgId=1&refresh=10s
+```
+
+Grafana login: `admin` / `admin`
+
+### 4. Confirm the cluster and services are healthy
+
+```bash
+kubectl -n heart-disease get pods,svc,ingress
+curl http://localhost:8000/health
+curl http://localhost:8000/model-info
+curl http://localhost:8000/metrics | head
+curl http://127.0.0.1:5000/
+curl http://localhost:9090/-/ready
+curl http://localhost:3000/api/health
+```
+
+### 5. Bring everything down
+
+```bash
+./deploy/k8s/bringdown.sh
+```
+
+This stops API and MLflow port-forwards, removes Prometheus and Grafana, and deletes the local `kind` cluster.
 
 ## Quick Start (Automated)
 
@@ -41,7 +143,7 @@ This single command will:
 Use these two commands for daily workflow:
 
 ```bash
-# Bring up cluster + API + MLflow UI
+# Bring up cluster + API + MLflow UI + Prometheus + Grafana
 ./deploy/k8s/bringup.sh
 
 # Bring everything down and cleanup
@@ -53,7 +155,9 @@ Use these two commands for daily workflow:
 2. Restores kubeconfig for your user (fixes kubectl context after sudo runs).
 3. Starts persistent port-forward for API on `localhost:8000`.
 4. Starts persistent port-forward for MLflow on `localhost:5000`.
-5. Verifies both API and MLflow health endpoints.
+5. Starts Prometheus on `localhost:9090`.
+6. Starts Grafana on `localhost:3000`.
+7. Verifies API, MLflow, Prometheus, Grafana, and `/metrics`.
 
 ### 1.1 Build the API image
 
@@ -178,11 +282,5 @@ Capture and attach these screenshots in report:
 ## 4. Cleanup
 
 ```bash
-kubectl delete -f deploy/k8s/ingress.yaml
-kubectl delete -f deploy/k8s/service.yaml
-kubectl delete -f deploy/k8s/deployment.yaml
-kubectl delete -f deploy/k8s/mlflow-service.yaml
-kubectl delete -f deploy/k8s/mlflow-deployment.yaml
-kubectl delete -f deploy/k8s/namespace.yaml
-kind delete cluster --name heart-disease
+./deploy/k8s/bringdown.sh
 ```

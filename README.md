@@ -243,6 +243,113 @@ docker compose down -v
 
 ## Quickstart
 
+### Ubuntu setup for the full local demo
+
+Use this sequence if you want the repository to work end to end on Ubuntu with these browser URLs at the end:
+
+- http://localhost:8000/
+- http://127.0.0.1:5000/
+- http://localhost:8000/metrics
+- http://localhost:3000/d/heart-disease-api-monitoring/heart-disease-api-monitoring?orgId=1&refresh=10s
+
+#### 1. Install system prerequisites
+
+```bash
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg lsb-release git python3 python3-venv python3-pip
+
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo usermod -aG docker "$USER"
+
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+sudo install -m 0755 kubectl /usr/local/bin/kubectl
+rm kubectl
+
+curl -Lo ./kind "https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64"
+chmod +x ./kind
+sudo mv ./kind /usr/local/bin/kind
+
+newgrp docker
+docker --version
+kubectl version --client
+kind --version
+```
+
+#### 2. Clone the repository
+
+```bash
+git clone https://github.com/anabhart/MLOps-Assignment.git
+cd MLOps-Assignment
+```
+
+#### 3. Install Python dependencies
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+pip install -e ".[dev,api]"
+```
+
+#### 4. Bring up Kubernetes, MLflow, Prometheus, and Grafana
+
+```bash
+./deploy/k8s/bringup.sh
+```
+
+What this single script now does:
+
+1. Checks `docker`, `kubectl`, `kind`, and `curl`.
+2. Builds the API image from `Containerfile`.
+3. Creates the `kind` cluster if it does not already exist.
+4. Deploys MLflow and the API to Kubernetes.
+5. Waits until both deployments are healthy.
+6. Starts port-forwarding so the API is on `localhost:8000` and MLflow is on `127.0.0.1:5000`.
+7. Starts Prometheus and Grafana locally.
+8. Verifies `/health`, `/metrics`, Prometheus readiness, and Grafana health.
+
+#### 5. Verify the final result in your browser
+
+Open these URLs:
+
+- http://localhost:8000/
+- http://localhost:8000/docs
+- http://localhost:8000/metrics
+- http://127.0.0.1:5000/
+- http://localhost:3000/d/heart-disease-api-monitoring/heart-disease-api-monitoring?orgId=1&refresh=10s
+
+Grafana login:
+
+- username: `admin`
+- password: `admin`
+
+#### 6. Confirm the stack is healthy from the terminal
+
+```bash
+curl http://localhost:8000/health
+curl http://localhost:8000/model-info
+curl http://localhost:8000/metrics | head
+curl http://127.0.0.1:5000/
+kubectl -n heart-disease get pods,svc,ingress
+```
+
+#### 7. Bring everything down cleanly
+
+```bash
+./deploy/k8s/bringdown.sh
+```
+
+This stops the API and MLflow port-forwards, removes Prometheus and Grafana containers, and deletes the local `kind` cluster.
+
 ### 1. Install
 ```powershell
 python -m venv .venv
@@ -298,7 +405,51 @@ podman run --rm -p 8000:8000 heart-disease-api:latest
 ### 7. Deploy to Kubernetes
 See [deploy/k8s/README.md](deploy/k8s/README.md) for the kind quickstart.
 
-### 8. Drift detection
+### 8. Monitoring & Logging (Requirement 8)
+
+The API includes production-friendly observability out of the box:
+
+- **Structured API logs** (JSON): method, path, status, latency, client IP
+  - Implemented in `api/logging_config.py` and request middleware in `api/app.py`
+- **Prometheus metrics** at `/metrics`
+  - `predict_requests_total{status}`
+  - `predict_latency_seconds` (histogram)
+  - `predict_predictions_total{label}`
+  - `feedback_submissions_total{correct}`
+  - `feedback_rows` (gauge)
+  - `retrain_runs_total{status}`
+- **Grafana dashboard** pre-provisioned from file
+  - `monitoring/grafana/dashboards/api-monitoring.json`
+
+Start the full monitoring stack:
+
+```bash
+docker compose up -d --build
+```
+
+Access points:
+
+- API docs: http://localhost:8000/docs
+- Prometheus targets/query UI: http://localhost:9090
+- Grafana dashboard: http://localhost:3000
+  - login: `admin` / `admin`
+  - dashboard: **Heart Disease API Monitoring**
+
+Generate traffic so charts populate:
+
+```bash
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{"age":63,"sex":1,"cp":1,"trestbps":145,"chol":233,"fbs":1,"restecg":2,"thalach":150,"exang":0,"oldpeak":2.3,"slope":3,"ca":0,"thal":6}'
+```
+
+View request logs:
+
+```bash
+docker logs --tail=50 heart-disease-api
+```
+
+### 9. Drift detection
 ```powershell
 python monitoring/drift_detection.py
 # Outputs artifacts/reports/drift_report.html + .json

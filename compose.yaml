@@ -9,6 +9,8 @@
 #   - Prediction UI:    http://localhost:8000/ui
 #   - Swagger:          http://localhost:8000/docs
 #   - Prometheus:       http://localhost:8000/metrics
+#   - Prometheus server: http://localhost:9090
+#   - Grafana:          http://localhost:3000  (admin/admin)
 #
 # Traces emitted from the API land in MLflow under the
 # `heart-disease-serving` experiment because the `api` service is
@@ -74,4 +76,40 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: heart-disease-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: heart-disease-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
 # No named volumes required: MLflow state is persisted in ./mlruns.
+volumes:
+  prometheus_data:
+  grafana_data:
