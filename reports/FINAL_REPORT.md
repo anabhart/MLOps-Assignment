@@ -329,20 +329,116 @@ See [`reports/ARCHITECTURE.md`](ARCHITECTURE.md) for diagrams.
 * **Monitoring** combines structured JSON logs, a Prometheus
   `/metrics` endpoint, and Evidently drift reports.
 
-## 8. CI/CD
+## 8. CI/CD Pipeline & Automated Testing
 
-The single GitHub Actions workflow at `.github/workflows/ci.yml` runs four
-sequential jobs on every push / PR:
+### 8.1 GitHub Actions workflow
 
-1. **lint** — `ruff check src tests api`
-2. **test** — `pytest --cov=heart_disease_mlops`
-3. **train-smoke** — `python -m heart_disease_mlops` with reduced grids
-   (`HEART_DISEASE_FAST_TRAIN=1`); uploads artifacts.
-4. **container** — builds the image from `Containerfile` and exercises
-   `/health` + `/predict` from inside the workflow.
+**Location**: `.github/workflows/ci.yml`
+**Triggers**: push to `main`/`master`, pull requests (any branch), manual `workflow_dispatch`
+**Concurrency**: one run per ref; duplicate runs cancelled with `cancel-in-progress: true`
 
-The pipeline fails on any lint, test, training, or container error and
-surfaces clear logs.
+The workflow runs **four sequential jobs** — each `needs:` the previous so the
+chain fails fast on any error:
+
+```
+Lint (ruff) → Unit tests → Training smoke run → Container build
+```
+
+| Job | Name | Key steps |
+|-----|------|-----------|
+| `lint` | Lint (ruff) | `ruff check src tests api` |
+| `test` | Unit tests | `pytest --cov=heart_disease_mlops --cov-report=term-missing` |
+| `train-smoke` | Training smoke run | `HEART_DISEASE_FAST_TRAIN=1 python -m heart_disease_mlops` |
+| `container` | Container build | `docker build -f Containerfile …` → `/health` + `/predict` smoke |
+
+All four jobs use `actions/setup-python@v5` with `cache: pip` to avoid
+re-downloading packages on every run.
+
+### 8.2 Linting
+
+```yaml
+- name: ruff check
+  run: ruff check src tests api
+```
+
+Ruff is configured in `pyproject.toml`:
+- `line-length = 100`, `target-version = "py311"`
+- Rule sets: `E, F, W, I, B, UP` (errors, pyflakes, warnings, isort, bugbear, pyupgrade)
+- Ignores: `E501` (line length enforced by formatter, not linter)
+- Excludes: `notebooks/`, `artifacts/`, `mlruns/`, `.venv`
+
+### 8.3 Automated testing
+
+**Test suite**: 6 files, **31 tests** covering the full pipeline stack.
+
+| File | Count | What it covers |
+|------|-------|----------------|
+| `tests/test_data.py` | 8 | Data loading, cleaning, missing-value handling, stratified split, validation |
+| `tests/test_preprocessing.py` | 4 | ColumnTransformer output shape, numeric standardization, OHE expansion, unseen-category handling |
+| `tests/test_train.py` | 4 | Pipeline build + fit, cross-validation structure, fast-mode grid size, end-to-end smoke |
+| `tests/test_api.py` | 5 | `/health`, `/model-info`, `/predict`, validation errors (422), `/metrics` |
+| `tests/test_feedback.py` | 7 | Feedback CSV creation, label validation, dataset augmentation, `/feedback`, `/retrain`, UI serving |
+| `tests/test_tracing.py` | 3 | MLflow tracing setup, env-driven disable, trace decorator execution |
+
+Pytest is configured in `pyproject.toml`:
+```toml
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q --strict-markers"
+markers = ["slow: marks tests that train models or do heavy I/O"]
+```
+
+**Shared fixtures** (`tests/conftest.py`):
+- `project_root` — session-scoped workspace root path
+- `cleaned_df` — session-scoped cleaned Cleveland DataFrame (loaded once, shared across all tests)
+
+The `test` job runs with `HEART_DISEASE_FAST_TRAIN=1` so training-dependent
+tests use reduced grids and complete within the CI time budget.
+
+### 8.4 Training smoke step
+
+```yaml
+- name: Run training (fast mode)
+  env:
+    HEART_DISEASE_FAST_TRAIN: "1"
+  run: python -m heart_disease_mlops
+```
+
+`HEART_DISEASE_FAST_TRAIN=1` halves the hyperparameter grids so the full
+train + MLflow log + model-registry promotion step completes quickly while
+still exercising the complete code path.
+
+### 8.5 Container build & smoke test
+
+```yaml
+- name: Build container image with Docker
+  run: docker build -f Containerfile -t heart-disease-api:ci .
+- name: Smoke test container
+  run: |
+    docker run -d --name api -p 8000:8000 heart-disease-api:ci
+    sleep 8
+    curl --fail --retry 5 --retry-delay 2 http://localhost:8000/health
+    curl --fail -X POST http://localhost:8000/predict \
+      -H 'Content-Type: application/json' \
+      -d @api/example_requests.json
+    docker logs api
+    docker rm -f api
+```
+
+The container step re-trains the model on the CI runner before building
+the image, so the baked-in `best_model.joblib` is always fresh.
+
+### 8.6 Artifact upload
+
+| Job | Artifact name | Contents | When uploaded |
+|-----|--------------|----------|---------------|
+| `test` | `pytest-artifacts` | `artifacts/`, `mlruns/` | Only on failure (debug) |
+| `train-smoke` | `training-artifacts` | `artifacts/`, `mlruns/` | Always (per-run evidence) |
+
+The `training-artifacts` upload captures `training_summary.json`,
+classification reports, confusion matrix/ROC PNGs, and the serialized
+joblib model from every successful CI run.
+
 
 ## 9. Containerization & deployment
 

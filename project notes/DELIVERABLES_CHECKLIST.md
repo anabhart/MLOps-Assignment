@@ -249,7 +249,41 @@
 
 ---
 
-### Requirement 5: REST API & Inference (5 marks)
+### Requirement 5: CI/CD Pipeline & Automated Testing (8 marks)
+- [x] **Unit tests for data processing code** — 8 tests covering raw load, cleaning, NA handling, stratified split, validation
+  - Evidence: `tests/test_data.py` — `test_load_raw_cleveland_shape_and_schema`, `test_clean_cleveland_drops_na_and_binarizes_target`, `test_train_test_split_is_stratified_and_reproducible`, etc.
+- [x] **Unit tests for preprocessing** — 4 tests covering ColumnTransformer output shape, standardization, OHE expansion, unseen-category handling
+  - Evidence: `tests/test_preprocessing.py` — `test_preprocessor_outputs_finite_floats`, `test_preprocessor_numeric_block_is_standardized`, `test_preprocessor_expands_categoricals`, `test_preprocessor_handles_unseen_categories`
+- [x] **Unit tests for model code** — 4 tests covering pipeline build/fit, cross-validation, fast-mode grids, end-to-end smoke
+  - Evidence: `tests/test_train.py` — `test_build_pipeline_fits_and_predicts`, `test_cross_validate_pipeline_returns_valid_scores`, `test_train_and_log_all_smoke`
+- [x] **API integration tests** — 5 tests covering all key endpoints + validation error path
+  - Evidence: `tests/test_api.py` — `/health`, `/model-info`, `/predict`, 422 validation error, `/metrics` Prometheus output
+- [x] **Feedback & retrain tests** — 7 tests covering full feedback loop
+  - Evidence: `tests/test_feedback.py` — feedback CSV, dataset augmentation, `/feedback` endpoint, `/retrain` job scheduling, UI serving
+- [x] **Tracing tests** — 3 tests for MLflow tracing wiring
+  - Evidence: `tests/test_tracing.py` — `test_setup_tracing_returns_true`, `test_setup_tracing_disabled_via_env`, `test_trace_decorator_runs_without_error`
+- [x] **GitHub Actions CI pipeline** — 4 sequential jobs wired to fail-fast
+  - Evidence: `.github/workflows/ci.yml` — triggers on push/PR to `main`/`master`, `workflow_dispatch`; jobs: `lint → test → train-smoke → container`
+- [x] **Linting step in CI** — `ruff check src tests api` in `lint` job
+  - Evidence: `ci.yml` step `ruff check`; ruff configured in `pyproject.toml` with rules `E,F,W,I,B,UP`
+- [x] **Automated testing step in CI** — `pytest --cov=heart_disease_mlops --cov-report=term-missing` in `test` job
+  - Evidence: `ci.yml` step `Run pytest`; `HEART_DISEASE_FAST_TRAIN=1` env var set so training smoke completes within budget
+- [x] **Model training step in CI** — Fast-mode full training pipeline run
+  - Evidence: `ci.yml` `train-smoke` job step `Run training (fast mode)`: `HEART_DISEASE_FAST_TRAIN=1 python -m heart_disease_mlops`
+- [x] **Container build + API smoke test in CI** — Docker build then live endpoint test
+  - Evidence: `ci.yml` `container` job: `docker build -f Containerfile` → `curl --fail http://localhost:8000/health` + `curl --fail -X POST /predict`
+- [x] **Artifact upload per workflow run** — Training artifacts always uploaded; test artifacts on failure
+  - Evidence: `ci.yml` — `training-artifacts` (artifacts/ + mlruns/) uploaded unconditionally from `train-smoke` job; `pytest-artifacts` uploaded `if: failure()` from `test` job
+- [x] **Pip dependency caching** — `cache: pip` in `actions/setup-python@v5` on all 4 jobs
+  - Evidence: `ci.yml` — `with: cache: pip` present in `lint`, `test`, `train-smoke`, `container` jobs
+- [x] **Concurrency control** — Duplicate runs cancelled automatically
+  - Evidence: `ci.yml` `concurrency.cancel-in-progress: true` grouped by `${{ github.workflow }}-${{ github.ref }}`
+
+**Status**: ✅ **COMPLETE** (8/8 marks)
+
+---
+
+### Requirement 5 (original checklist): REST API & Inference (5 marks)
 - [x] **REST API endpoints** — `/health`, `/predict`, `/model-info`, `/retrain`, `/feedback`
   - Evidence: `api/app.py` lines 50-180 — 5+ endpoints implemented
 - [x] **Inference endpoint** — JSON input → prediction + probability

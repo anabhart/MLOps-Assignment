@@ -102,6 +102,50 @@ conda env create -f mlruns/<exp>/<run>/artifacts/model/conda.yaml
 Key pinned packages: `scikit-learn==1.8.0`, `numpy==2.4.4`, `pandas==2.3.3`,
 `joblib==1.5.3`, `cloudpickle==3.1.2`.
 
+## CI/CD Pipeline & Automated Testing (Requirement 5)
+
+### GitHub Actions workflow (`.github/workflows/ci.yml`)
+
+Triggers on every push to `main`/`master` and all pull requests.
+Four sequential jobs — each requires the previous to pass:
+
+```
+Lint (ruff) → Unit tests → Training smoke run → Container build & smoke
+```
+
+| Job | What it does |
+|-----|-------------|
+| **Lint** | `ruff check src tests api` — enforces style, imports, bugbear rules |
+| **Unit tests** | `pytest --cov=heart_disease_mlops` with `HEART_DISEASE_FAST_TRAIN=1` |
+| **Training smoke** | Full `python -m heart_disease_mlops` in fast mode; uploads `training-artifacts` |
+| **Container build** | `docker build -f Containerfile` then live `/health` + `/predict` smoke test |
+
+Pip dependency caching (`cache: pip`) is enabled on all jobs. Duplicate
+workflow runs are cancelled automatically (`cancel-in-progress: true`).
+
+### Test suite (31 tests across 6 files)
+
+| File | Tests | Coverage |
+|------|-------|---------|
+| `tests/test_data.py` | 8 | Raw load, cleaning, NA handling, stratified split, validation |
+| `tests/test_preprocessing.py` | 4 | ColumnTransformer shape, standardization, OHE expansion, unseen categories |
+| `tests/test_train.py` | 4 | Pipeline fit, CV structure, fast-mode grids, end-to-end smoke |
+| `tests/test_api.py` | 5 | `/health`, `/model-info`, `/predict`, 422 validation, `/metrics` |
+| `tests/test_feedback.py` | 7 | Feedback CSV, label validation, dataset augmentation, endpoints |
+| `tests/test_tracing.py` | 3 | MLflow tracing setup, env disable, decorator execution |
+
+### Artifact uploads per workflow run
+
+- `pytest-artifacts` — uploaded **on failure** (debug: `artifacts/`, `mlruns/`)
+- `training-artifacts` — uploaded **always** from the smoke run (`artifacts/`, `mlruns/`)
+
+```bash
+# Run tests locally
+pytest --cov=heart_disease_mlops
+# Lint
+ruff check src tests api
+```
+
 ## Quickstart
 
 ### 1. Install
