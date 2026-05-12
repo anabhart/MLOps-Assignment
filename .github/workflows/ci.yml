@@ -10,6 +10,16 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Required: set this in repository secrets to a persistent MLflow server URI.
+  # Example: http://<mlflow-host>:5000
+  MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+  # Kept for compatibility with code paths that read MLFLOW_SERVER_URI first.
+  MLFLOW_SERVER_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+  # Optional auth secrets for protected MLflow servers.
+  MLFLOW_TRACKING_USERNAME: ${{ secrets.MLFLOW_TRACKING_USERNAME }}
+  MLFLOW_TRACKING_PASSWORD: ${{ secrets.MLFLOW_TRACKING_PASSWORD }}
+
 jobs:
   lint:
     name: Lint (ruff)
@@ -35,6 +45,13 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
+      - name: Validate MLflow secret
+        run: |
+          if [[ -z "${MLFLOW_TRACKING_URI}" ]]; then
+            echo "MLFLOW_TRACKING_URI secret is missing."
+            echo "Set repository secret MLFLOW_TRACKING_URI to your persistent MLflow server URI."
+            exit 1
+          fi
       - name: Install project + dev/api extras
         run: |
           pip install -r requirements.txt
@@ -62,6 +79,13 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
+      - name: Validate MLflow secret
+        run: |
+          if [[ -z "${MLFLOW_TRACKING_URI}" ]]; then
+            echo "MLFLOW_TRACKING_URI secret is missing."
+            echo "Set repository secret MLFLOW_TRACKING_URI to your persistent MLflow server URI."
+            exit 1
+          fi
       - name: Install project
         run: |
           pip install -r requirements.txt
@@ -89,6 +113,13 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
+      - name: Validate MLflow secret
+        run: |
+          if [[ -z "${MLFLOW_TRACKING_URI}" ]]; then
+            echo "MLFLOW_TRACKING_URI secret is missing."
+            echo "Set repository secret MLFLOW_TRACKING_URI to your persistent MLflow server URI."
+            exit 1
+          fi
       - name: Train model for image
         env:
           HEART_DISEASE_FAST_TRAIN: "1"
