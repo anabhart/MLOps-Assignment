@@ -333,8 +333,16 @@ def load_model(path: Path | str = MODELS_DIR / "best_model.joblib") -> Pipeline:
 
 def _cli() -> None:
     """Console-script entry point: ``heart-disease-train``."""
-    print(json.dumps(train_and_log_all(), indent=2, default=str))
+    experiment_name = os.getenv("HEART_DISEASE_EXPERIMENT_NAME", "heart-disease-cleveland")
+    print(
+        json.dumps(
+            train_and_log_all(experiment_name=experiment_name),
+            indent=2,
+            default=str,
+        )
+    )
 
 if __name__ == "__main__":
-    summary = train_and_log_all()
+    experiment_name = os.getenv("HEART_DISEASE_EXPERIMENT_NAME", "heart-disease-cleveland")
+    summary = train_and_log_all(experiment_name=experiment_name)
     print(json.dumps(summary, indent=2))

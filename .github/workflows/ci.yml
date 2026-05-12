@@ -69,6 +69,7 @@ jobs:
       - name: Run training (fast mode)
         env:
           HEART_DISEASE_FAST_TRAIN: "1"
+          HEART_DISEASE_EXPERIMENT_NAME: "ci-flow"
         run: python -m heart_disease_mlops
       - name: Upload trained artifacts
         uses: actions/upload-artifact@v4
@@ -89,10 +90,13 @@ jobs:
           python-version: "3.11"
           cache: pip
       - name: Train model for image
+        env:
+          HEART_DISEASE_FAST_TRAIN: "1"
+          HEART_DISEASE_EXPERIMENT_NAME: "ci-flow"
         run: |
           pip install -r requirements.txt
           pip install -e .
-          HEART_DISEASE_FAST_TRAIN=1 python -m heart_disease_mlops
+          python -m heart_disease_mlops
       - name: Build container image with Docker (Containerfile is OCI-compatible)
         run: docker build -f Containerfile -t heart-disease-api:ci .
       - name: Smoke test container
