@@ -72,18 +72,23 @@ kind load docker-image heart-disease-api:latest --name heart-disease
 
 # Deploy manifests
 kubectl apply -f deploy/k8s/namespace.yaml
+kubectl apply -f deploy/k8s/mlflow-deployment.yaml
+kubectl apply -f deploy/k8s/mlflow-service.yaml
 kubectl apply -f deploy/k8s/deployment.yaml
 kubectl apply -f deploy/k8s/service.yaml
+kubectl apply -f deploy/k8s/ingress.yaml
 
 # Wait for rollout
 kubectl -n heart-disease rollout status deploy/heart-disease-api
-kubectl -n heart-disease get pods,svc
+kubectl -n heart-disease rollout status deploy/heart-disease-mlflow
+kubectl -n heart-disease get pods,svc,ingress
 ```
 
 If your local cluster does not provide external LoadBalancer IPs, use:
 
 ```bash
-kubectl -n heart-disease port-forward svc/heart-disease-api 8080:80
+kubectl -n heart-disease port-forward svc/heart-disease-api 8000:80
+kubectl -n heart-disease port-forward svc/heart-disease-mlflow 5000:5000
 ```
 
 ### 1.3 Ingress exposure path
@@ -133,13 +138,16 @@ Use either LoadBalancer URL, ingress host, or port-forward URL.
 
 ```bash
 # Health
-curl http://localhost:8080/health
+curl http://localhost:8000/health
 
 # Model info
-curl http://localhost:8080/model-info
+curl http://localhost:8000/model-info
+
+# MLflow UI
+curl http://localhost:5000/
 
 # Predict
-curl -X POST http://localhost:8080/predict \
+curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
   -d '{
     "age": 63,
@@ -170,6 +178,11 @@ Capture and attach these screenshots in report:
 ## 4. Cleanup
 
 ```bash
-kubectl delete -f deploy/k8s/
+kubectl delete -f deploy/k8s/ingress.yaml
+kubectl delete -f deploy/k8s/service.yaml
+kubectl delete -f deploy/k8s/deployment.yaml
+kubectl delete -f deploy/k8s/mlflow-service.yaml
+kubectl delete -f deploy/k8s/mlflow-deployment.yaml
+kubectl delete -f deploy/k8s/namespace.yaml
 kind delete cluster --name heart-disease
 ```
