@@ -62,21 +62,99 @@ EDA highlights (`notebooks/01_eda.ipynb`):
 * Numeric features have very different scales → standard scaling required.
 * Categorical codes are non-ordinal → one-hot encoding preferred.
 
-## 4. Modelling choices
+## 4. Feature Engineering & Model Development
 
-| Concern | Decision | Rationale |
-|---------|----------|-----------|
-| Imputation | Median (numeric), mode (categorical) | Robust to small sample, no leakage |
-| Scaling | `StandardScaler` | Required for LogReg; harmless for RF |
-| Encoding | `OneHotEncoder(handle_unknown='ignore')` | Treat codes as nominal; tolerant at inference |
-| Models | Logistic Regression, Random Forest | Linear baseline + non-linear ensemble |
-| Tuning | `GridSearchCV`, 5-fold stratified, scoring `roc_auc` | Standard, stratified for class imbalance |
-| Selection | Best test ROC-AUC | Robust to class imbalance |
+### 4.1 Feature Engineering Pipeline
 
-Both models score **ROC-AUC ≈ 0.88–0.92** on a held-out test set; full
-metrics tables and confusion matrices are produced by
-`notebooks/02_training_and_analysis.ipynb` and persisted under
-`artifacts/reports/`.
+**Location**: `src/heart_disease_mlops/preprocessing.py`
+
+| Feature Type | Imputation | Transformation | Output |
+|--------------|-----------|-----------------|--------|
+| **Numeric** (5 features: age, trestbps, chol, thalach, oldpeak) | Median | StandardScaler | Normalized float |
+| **Categorical** (8 features: sex, cp, fbs, restecg, exang, slope, ca, thal) | Most-frequent | OneHotEncoder | Binary indicators |
+
+The preprocessing pipeline is implemented as a `ColumnTransformer` that ensures:
+- **No data leakage**: All statistics (median, mode) computed on training data only
+- **Unseen categories at inference**: `handle_unknown='ignore'` gracefully handles novel categorical values
+- **Pipeline integration**: Full preprocessing + classifier pipeline for proper cross-validation
+
+### 4.2 Model Candidates & Hyperparameter Tuning
+
+**Location**: `src/heart_disease_mlops/train.py` (lines 40–100)
+
+#### Model 1: Logistic Regression
+```python
+Param grid: C ∈ [0.1, 1.0, 10.0] × penalty ∈ ['l1', 'l2']
+Total combinations: 6
+Best params: C=10.0, penalty='l1'
+CV ROC-AUC: 0.9246
+```
+
+#### Model 2: Random Forest (SELECTED)
+```python
+Param grid: 
+  - n_estimators ∈ [200, 400]
+  - max_depth ∈ [None, 5, 10]
+  - min_samples_split ∈ [2, 5]
+Total combinations: 12
+Best params: n_estimators=200, max_depth=5, min_samples_split=2
+CV ROC-AUC: 0.9075 → Test ROC-AUC: 0.9116 ✓ BEST
+```
+
+### 4.3 Cross-Validation Strategy
+
+**Configuration** (`train.py` lines 106–116):
+- **Strategy**: Stratified K-fold (preserves class distribution)
+- **Splits**: 5 folds
+- **Scoring**: ROC-AUC (robust to class imbalance: 46% disease, 54% healthy)
+- **Reproducibility**: `random_state=42`, shuffle=True
+- **Parallelization**: `n_jobs=-1` for multiprocessing
+
+### 4.4 Model Evaluation Results
+
+**Test Set Performance** (61 samples, 244 train / 8 feedback split):
+
+**Logistic Regression**:
+```
+Accuracy:  78.69%    Precision: 83.33%    Recall: 68.97%
+F1-Score:  75.47%    ROC-AUC:   86.53%
+```
+
+**Random Forest (SELECTED)**:
+```
+Accuracy:  78.69%    Precision: 80.77%    Recall: 72.41%
+F1-Score:  76.36%    ROC-AUC:   91.16% ← BEST MODEL
+```
+
+**Classification Report (Random Forest - test set)**:
+```
+Class 0 (No disease):   Precision 77%, Recall 84%, F1 81%
+Class 1 (Disease):      Precision 81%, Recall 72%, F1 76%
+```
+
+### 4.5 Model Selection Criteria
+
+- **Primary metric**: ROC-AUC (robust to class imbalance)
+- **Rationale**: Logistic Regression (86.53%) vs Random Forest (91.16%)
+- **Decision**: Random Forest selected (≈4.6% improvement in ROC-AUC)
+- **Trade-off**: Slight recall improvement for disease class (72.41% vs 68.97%)
+
+### 4.6 Training Artifacts
+
+Full training workflow documented in `notebooks/02_training_and_analysis.ipynb`:
+1. Load + preprocess data (ColumnTransformer integration)
+2. Stratified train/test split (80/20)
+3. Cross-validation baseline scores
+4. GridSearchCV hyperparameter optimization
+5. Best model evaluation on held-out test set
+6. ROC curves, confusion matrices, feature importance plots
+7. MLflow logging and model registry promotion
+
+**Persisted Artifacts** (`artifacts/reports/`):
+- `training_summary.json` — all metrics, best params, timestamps
+- `logistic_regression_classification_report.txt`
+- `random_forest_classification_report.txt`
+- `best_model.joblib` — saved Random Forest pipeline (preprocessing + classifier)
 
 ## 5. Experiment tracking
 

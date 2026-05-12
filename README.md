@@ -27,6 +27,18 @@ artifacts/          # generated models, reports, figures (git-ignored)
 mlruns/             # MLflow tracking store (git-ignored)
 ```
 
+## Model Development
+
+Two classification models are trained and compared:
+- **Logistic Regression**: Linear baseline (ROC-AUC: 0.8653)
+- **Random Forest**: Ensemble classifier (ROC-AUC: **0.9116**, selected)
+
+Both use the same preprocessing pipeline:
+- Numeric features: Median imputation + StandardScaler
+- Categorical features: Mode imputation + OneHotEncoder
+
+Hyperparameter tuning via GridSearchCV with 5-fold stratified cross-validation on ROC-AUC. Full results in `artifacts/reports/training_summary.json` and classification reports.
+
 ## Quickstart
 
 ### 1. Install
