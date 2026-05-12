@@ -59,6 +59,49 @@ Use the UI to inspect tracked runs:
 mlflow ui --backend-store-uri mlruns
 ```
 
+## Model Packaging & Reproducibility (Requirement 4)
+
+The final model is saved in multiple reusable formats so it can be loaded,
+served, and reproduced without retraining.
+
+### Serialization formats
+
+| Format | Path | Description |
+|--------|------|-------------|
+| **joblib** | `artifacts/models/best_model.joblib` | Primary serving artifact — full sklearn `Pipeline` |
+| **MLflow sklearn flavor** | `mlruns/<exp>/<run>/artifacts/model/` | Per-run artifact with `conda.yaml` + `python_env.yaml` |
+| **MLflow Model Registry** | `mlruns/models/heart-disease-classifier/` | Versioned registry with 20+ versions |
+
+All three serialize the **complete sklearn `Pipeline`** (preprocessor + classifier together),
+so a single `model.predict(X_raw)` call handles all feature transformations.
+
+### Preprocessing pipeline
+
+`src/heart_disease_mlops/preprocessing.py` builds a `ColumnTransformer` that is
+always saved inside the model object:
+
+- **Numeric** (age, trestbps, chol, thalach, oldpeak): `SimpleImputer(median)` → `StandardScaler`
+- **Categorical** (sex, cp, fbs, restecg, exang, slope, ca, thal): `SimpleImputer(most_frequent)` → `OneHotEncoder`
+
+Because the preprocessor is fitted as part of `Pipeline.fit()`, all fit statistics
+(medians, encodings) are captured in the serialized object — **no train/serve skew** is possible.
+
+### Dependency management
+
+```bash
+# Option 1: exact pip environment
+pip install -r requirements.txt && pip install -e .
+
+# Option 2: MLflow managed environment (uses stored conda.yaml)
+mlflow models serve -m "models:/heart-disease-classifier/latest"
+
+# Option 3: conda environment (from auto-generated file)
+conda env create -f mlruns/<exp>/<run>/artifacts/model/conda.yaml
+```
+
+Key pinned packages: `scikit-learn==1.8.0`, `numpy==2.4.4`, `pandas==2.3.3`,
+`joblib==1.5.3`, `cloudpickle==3.1.2`.
+
 ## Quickstart
 
 ### 1. Install
