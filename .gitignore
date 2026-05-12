@@ -25,9 +25,8 @@ data/feedback/*.csv
 *.joblib
 *.pkl
 
-# Reports / screenshots (keep folder structure if needed via .gitkeep)
-reports/screenshots/*
-!reports/screenshots/.gitkeep
+# Reports / screenshots - track PNG files for deployment evidence
+# (folder structure maintained, but PNG files are tracked)
 
 # OS / IDE
 .DS_Store
